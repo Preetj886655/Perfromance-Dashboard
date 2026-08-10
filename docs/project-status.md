@@ -2,34 +2,55 @@
 
 ## Project Status
 
-Current Phase: Step 0 - Workspace Setup
+Current Phase: **Phase 1 — Project Foundation (COMPLETE)**
 
-## Completed
+Phase 2+ has **not** been started.
 
-- [x] Project folder created
-- [x] Reference DOCX added
-- [x] Reference Excel added
-- [x] Docs folder created
+## Approval Record (2026-08-10)
 
-## Current Phase
+- [x] Implementation plan approved as working architecture baseline
+- [x] Technical stack approved (React+TS+Vite, FastAPI, PostgreSQL, ECharts, AG Grid, SSE, Docker Compose)
+- [x] Excel DPR_OEE formulas confirmed as OEE calculation source of truth
+- [x] Phase 1 foundation explicitly authorized and completed
+- [x] TBC business questions documented as still TBC (not resolved)
 
-- [ ] Generate/finalize master development prompt
-- [ ] Architecture review
-- [ ] Project foundation
-- [ ] Database
-- [ ] Master data
+## TBC / Business Confirmation Required
+
+These remain **TBC / Business Confirmation Required** — not permanently decided:
+
+| ID | Topic | Status |
+|---|---|---|
+| Q1 | Midnight-crossing shift date attribution | TBC / Business Confirmation Required |
+| Q2 | Planned downtime categories | TBC / Business Confirmation Required |
+| Q6 | OEE aggregation and Run-Time Performance rollup | TBC / Business Confirmation Required |
+| Q11 | Multi-plant requirement | TBC / Business Confirmation Required |
+| Q13 | Line-to-machine mapping | TBC / Business Confirmation Required |
+| Q17 | Overall KPI weights | TBC / Business Confirmation Required |
+| Hosting | On-prem / private cloud / AWS / Azure preference | TBC / Business Confirmation Required |
+
+Details: [business-confirmations-tbc.md](business-confirmations-tbc.md)
+
+## Phase 1 — Project Foundation
+
+- [x] React + TypeScript + Vite frontend scaffold + application shell
+- [x] FastAPI backend scaffold + `/api/v1/health`
+- [x] PostgreSQL configuration + `docker-compose.yml`
+- [x] `.env.example` files (no secrets committed)
+- [x] README with local setup instructions
+- [x] Basic linting / type checking / tests + CI skeleton
+
+## Explicitly NOT started (Phase 2+)
+
+- [ ] Database schema / migrations / master data
+- [ ] Auth / RBAC
 - [ ] Excel/CSV ingestion
 - [ ] KPI/OEE engine
-- [ ] Production dashboard
-- [ ] Quality dashboard
-- [ ] Maintenance dashboard
-- [ ] PPC dashboard
-- [ ] Other department dashboards
-- [ ] Google Forms/Sheets integration
-- [ ] Real-time updates
-- [ ] Alerts
-- [ ] Action management
-- [ ] Reports
-- [ ] AI analytics
-- [ ] Testing
-- [ ] Deployment
+- [ ] Production / OEE / Quality / Maintenance / PPC dashboards
+- [ ] Management scorecard, alerts, actions, SSE
+- [ ] Google Forms/Sheets, AI, IoT
+
+## Completed earlier
+
+- [x] Project folder / reference DOCX / Excel / docs
+- [x] Architecture baseline approved
+- [x] TBC decisions recorded as TBC

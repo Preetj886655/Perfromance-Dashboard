@@ -2,16 +2,19 @@
 node_modules/
 .venv/
 venv/
+backend/.venv/
 
-# Environment variables
+# Environment variables (keep examples only)
 .env
 .env.*
 !.env.example
+!**/.env.example
 
 # Build
 dist/
 build/
 .next/
+frontend/dist/
 
 # Logs
 *.log
@@ -20,6 +23,10 @@ logs/
 # Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
 
 # IDE
 .vscode/
@@ -35,3 +42,8 @@ temp/
 
 # Uploaded/generated runtime data
 uploads/
+
+# Coverage / test artifacts
+coverage/
+htmlcov/
+.coverage

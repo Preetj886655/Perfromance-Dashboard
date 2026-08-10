@@ -1,0 +1,106 @@
+:root {
+  color: #1f2430;
+  background:
+    radial-gradient(circle at top left, rgba(140, 28, 40, 0.12), transparent 40%),
+    linear-gradient(180deg, #f7f4ef 0%, #ebe6dc 100%);
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+
+.shell__header h1 {
+  margin: 0.25rem 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  letter-spacing: -0.03em;
+}
+
+.shell__eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  color: #8c1c28;
+  font-weight: 700;
+}
+
+.shell__subtitle {
+  margin: 0.5rem 0 0;
+  color: #5a6170;
+  max-width: 40rem;
+}
+
+.shell__main {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 2rem;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(31, 36, 48, 0.08);
+  padding: 1.25rem 1.5rem;
+}
+
+.panel--muted {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.health-grid {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+}
+
+.health-grid div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.health-grid dt {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.health-grid dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.ok {
+  color: #1f6b3a;
+}
+
+.warn,
+.status--error {
+  color: #9b2c2c;
+}

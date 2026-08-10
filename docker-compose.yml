@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pril-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pril_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-pril}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pril_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pril_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pril} -d ${POSTGRES_DB:-pril_analytics}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pril_postgres_data:
