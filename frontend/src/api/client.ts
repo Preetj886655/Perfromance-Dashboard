@@ -3,6 +3,7 @@
  * Uses VITE_API_BASE_URL when set; otherwise same-origin (Vite proxy /api).
  */
 
+import { clearAccessToken } from "../auth/storage";
 import type { ApiError } from "../types/dashboard";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
@@ -39,13 +40,21 @@ function buildUrl(
   return `${url.pathname}${url.search}`;
 }
 
+function getTokenHeader(): Record<string, string> {
+  const token = window.localStorage.getItem("pril_access_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function apiGet<T>(
   path: string,
   query?: Record<string, string | number | undefined | null>,
 ): Promise<T> {
   const response = await fetch(buildUrl(path, query), {
     method: "GET",
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      ...getTokenHeader(),
+    },
   });
 
   let body: unknown = null;
@@ -59,6 +68,14 @@ export async function apiGet<T>(
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAccessToken();
+      window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
+    }
+    if (response.status === 403) {
+      window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
+    }
+
     const detail =
       body &&
       typeof body === "object" &&

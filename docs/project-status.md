@@ -6,11 +6,14 @@
 
 
 
-Current Phase: **Phase 2 — Stage B IN PROGRESS (OEE E2E/UAT tests complete — awaiting next-layer approval)**
+Current Phase: **Phase 2 — Stage B IN PROGRESS (Authentication complete — authorization/RBAC still pending)**
 
 
 
 - Phase 1 — Project Foundation: **COMPLETE**
+- Authentication layer: **COMPLETE**
+- Authorization / RBAC enforcement: **PENDING**
+- Route protection by plant/department scope: **PENDING**
 
 - Phase 2 Stage A — Database design & review: **FINAL-APPROVED** (2026-08-10)
 

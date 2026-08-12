@@ -27,6 +27,7 @@ from app.models.machine_type import MachineType
 from app.models.oee_snapshot import OeeSnapshot
 from app.models.plant import Plant
 from app.services.oee_rollup import AGGREGATION_RULE_VERSION
+from tests.auth_helpers import make_auth_headers
 
 
 @pytest.fixture
@@ -46,7 +47,8 @@ def db_session() -> Session:
 
 @pytest.fixture
 def client(db_session: Session) -> TestClient:
-    """TestClient with get_db overridden — no commit (outer txn rolls back)."""
+    """TestClient with get_db overridden and a valid auth header for protected routes."""
+    _, auth_headers = make_auth_headers(db_session, role_code="SUPER_ADMIN")
 
     def _override_get_db():
         try:
@@ -56,6 +58,21 @@ def client(db_session: Session) -> TestClient:
 
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as test_client:
+        original_get = test_client.get
+        original_post = test_client.post
+
+        def _with_auth(method):
+            def wrapped(url, *args, **kwargs):
+                kwargs_headers = dict(kwargs.pop("headers", {}) or {})
+                if not str(url).startswith("/api/v1/auth") and str(url) != "/api/v1/health":
+                    kwargs_headers.setdefault("Authorization", auth_headers["Authorization"])
+                kwargs["headers"] = kwargs_headers
+                return method(url, *args, **kwargs)
+
+            return wrapped
+
+        test_client.get = _with_auth(original_get)
+        test_client.post = _with_auth(original_post)
         yield test_client
     app.dependency_overrides.clear()
 

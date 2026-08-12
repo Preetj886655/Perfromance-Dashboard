@@ -20,6 +20,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
+    auth_secret_key: str = ""
+    auth_algorithm: str = "HS256"
+    auth_access_token_expire_minutes: int = 60
+
     # PostgreSQL — credentials come from env; never commit real secrets
     # Prefer 127.0.0.1 over localhost so clients do not resolve to a different
     # stack via IPv6 when both a host Postgres and Docker publish listeners.

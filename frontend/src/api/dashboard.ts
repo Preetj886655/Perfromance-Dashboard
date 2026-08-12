@@ -5,11 +5,17 @@
 
 import { apiGet } from "./client";
 import type {
+  LineOption,
+  MachineOption,
   OeeBreakdown,
   OeeSnapshot,
   OeeSnapshotList,
+  OperatorOption,
+  PartOption,
   PeriodType,
+  PlantOption,
   ScopeType,
+  ShiftOption,
 } from "../types/dashboard";
 
 const BASE = "/api/v1/dashboard";
@@ -114,4 +120,33 @@ export function fetchOeePlants(params: {
     plant_id: params.plant_id,
     aggregation_rule_version: params.aggregation_rule_version,
   });
+}
+
+export function fetchPlants(): Promise<{ items: PlantOption[]; count: number }> {
+  return apiGet<{ items: PlantOption[]; count: number }>("/api/v1/plants");
+}
+
+export function fetchLines(params: { plant_id?: string }): Promise<{ items: LineOption[]; count: number }> {
+  return apiGet<{ items: LineOption[]; count: number }>("/api/v1/lines", {
+    plant_id: params.plant_id,
+  });
+}
+
+export function fetchMachines(params: { line_id?: string; plant_id?: string }): Promise<{ items: MachineOption[]; count: number }> {
+  return apiGet<{ items: MachineOption[]; count: number }>("/api/v1/machines", {
+    line_id: params.line_id,
+    plant_id: params.plant_id,
+  });
+}
+
+export function fetchParts(): Promise<{ items: PartOption[]; count: number }> {
+  return apiGet<{ items: PartOption[]; count: number }>("/api/v1/parts");
+}
+
+export function fetchShifts(): Promise<{ items: ShiftOption[]; count: number }> {
+  return apiGet<{ items: ShiftOption[]; count: number }>("/api/v1/shifts");
+}
+
+export function fetchOperators(): Promise<{ items: OperatorOption[]; count: number }> {
+  return apiGet<{ items: OperatorOption[]; count: number }>("/api/v1/operators");
 }

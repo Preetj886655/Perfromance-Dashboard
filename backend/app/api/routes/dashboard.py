@@ -17,6 +17,7 @@ from app.api.schemas.dashboard import (
     OeeSnapshotListResponse,
     OeeSnapshotResponse,
 )
+from app.core.rbac import require_permission
 from app.db.session import get_db
 from app.models.oee_snapshot import OeeSnapshot
 from app.services import dashboard_oee as svc
@@ -95,6 +96,7 @@ def _parse_period_type(value: str) -> str:
 @router.get(
     "/oee",
     response_model=OeeSnapshotResponse,
+    dependencies=[Depends(require_permission("dashboard", "READ"))],
     summary="Get OEE snapshot for scope × period",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -138,6 +140,7 @@ def get_dashboard_oee(
 @router.get(
     "/oee/summary",
     response_model=OeeSnapshotResponse,
+    dependencies=[Depends(require_permission("dashboard", "READ"))],
     summary="Latest OEE snapshot for a scope",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -177,6 +180,7 @@ def get_dashboard_oee_summary(
 @router.get(
     "/oee/trend",
     response_model=OeeSnapshotListResponse,
+    dependencies=[Depends(require_permission("dashboard", "READ"))],
     summary="Chronological OEE snapshots for a range",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -218,6 +222,7 @@ def get_dashboard_oee_trend(
 @router.get(
     "/oee/breakdown",
     response_model=OeeBreakdownResponse,
+    dependencies=[Depends(require_permission("dashboard", "READ"))],
     summary="A/P/Q/OEE breakdown for scope × period",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -258,6 +263,7 @@ def get_dashboard_oee_breakdown(
 @router.get(
     "/oee/machines",
     response_model=OeeSnapshotListResponse,
+    dependencies=[Depends(require_permission("dashboard", "READ"))],
     summary="Machine-level OEE snapshots for a plant × period",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -287,6 +293,7 @@ def get_dashboard_oee_machines(
 @router.get(
     "/oee/lines",
     response_model=OeeSnapshotListResponse,
+    dependencies=[Depends(require_permission("dashboard", "READ"))],
     summary="Line-level OEE snapshots for a plant × period",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -316,6 +323,7 @@ def get_dashboard_oee_lines(
 @router.get(
     "/oee/plants",
     response_model=OeeSnapshotListResponse,
+    dependencies=[Depends(require_permission("dashboard", "READ"))],
     summary="Plant-level OEE snapshots for a period",
     description=(
         "Development/internal — authentication not yet implemented. "

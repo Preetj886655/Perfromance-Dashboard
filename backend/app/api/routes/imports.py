@@ -19,6 +19,7 @@ from app.api.schemas.imports import (
     ImportJobRowsPageResponse,
     ImportJobSummaryResponse,
 )
+from app.core.rbac import require_permission
 from app.db.session import get_db
 from app.models.import_job import ImportJob
 from app.models.import_job_row import ImportJobRow
@@ -62,6 +63,7 @@ def _import_message(status: str, error_summary: str | None) -> str:
 @router.post(
     "/imports/dpr-oee",
     response_model=DprOeeImportResponse,
+    dependencies=[Depends(require_permission("imports", "CREATE"))],
     summary="Upload DPR_OEE Excel workbook",
     description=(
         "Development/internal endpoint (authentication not yet implemented). "
@@ -157,6 +159,7 @@ async def upload_dpr_oee(
 @router.get(
     "/imports/{import_id}",
     response_model=ImportJobSummaryResponse,
+    dependencies=[Depends(require_permission("imports", "READ"))],
     summary="Get import job summary",
     description="Development/internal — authentication not yet implemented.",
     responses={
@@ -194,6 +197,7 @@ def get_import_job(
 @router.get(
     "/imports/{import_id}/rows",
     response_model=ImportJobRowsPageResponse,
+    dependencies=[Depends(require_permission("imports", "READ"))],
     summary="List import job rows (paginated)",
     description="Development/internal — authentication not yet implemented.",
     responses={

@@ -3,6 +3,52 @@
 export type ScopeType = "plant" | "line" | "machine";
 export type PeriodType = "day" | "week" | "month";
 
+export type PlantOption = {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+};
+
+export type LineOption = {
+  id: string;
+  code: string;
+  name: string;
+  plant_id: string;
+};
+
+export type MachineOption = {
+  id: string;
+  code: string;
+  name: string;
+  plant_id: string;
+  line_id: string | null;
+  status_id?: string | null;
+  status_code?: string | null;
+  status_name?: string | null;
+  status_is_active?: boolean | null;
+};
+
+export type PartOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type ShiftOption = {
+  id: string;
+  code: string;
+  name: string;
+  plant_id: string;
+};
+
+export type OperatorOption = {
+  id: string;
+  employee_code: string;
+  name: string;
+  department_id?: string | null;
+};
+
 export type OeeSnapshot = {
   id: string;
   scope_type: ScopeType | string;

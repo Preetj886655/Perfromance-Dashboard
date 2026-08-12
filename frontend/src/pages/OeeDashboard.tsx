@@ -1,5 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  fetchLines,
+  fetchMachines,
   fetchOee,
   fetchOeeBreakdown,
   fetchOeeLines,
@@ -7,6 +9,7 @@ import {
   fetchOeePlants,
   fetchOeeSummary,
   fetchOeeTrend,
+  fetchPlants,
 } from "../api/dashboard";
 import { ApiRequestError } from "../api/client";
 import { BreakdownChart } from "../components/dashboard/BreakdownChart";
@@ -17,8 +20,11 @@ import { SnapshotTable } from "../components/dashboard/SnapshotTable";
 import { TrendChart } from "../components/dashboard/TrendChart";
 import type {
   DashboardFilters,
+  LineOption,
+  MachineOption,
   OeeBreakdown,
   OeeSnapshot,
+  PlantOption,
   ScopeType,
 } from "../types/dashboard";
 import { isUuid } from "../utils/format";
@@ -55,6 +61,10 @@ export function OeeDashboard() {
   const [applied, setApplied] = useState<DashboardFilters | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  const [plantOptions, setPlantOptions] = useState<PlantOption[]>([]);
+  const [lineOptions, setLineOptions] = useState<LineOption[]>([]);
+  const [machineOptions, setMachineOptions] = useState<MachineOption[]>([]);
+
   const [snapshot, setSnapshot] = useState<LoadState<OeeSnapshot>>(emptyLoad());
   const [summary, setSummary] = useState<LoadState<OeeSnapshot>>(emptyLoad());
   const [breakdown, setBreakdown] = useState<LoadState<OeeBreakdown>>(emptyLoad());
@@ -62,6 +72,66 @@ export function OeeDashboard() {
   const [machines, setMachines] = useState<LoadState<OeeSnapshot[]>>(emptyLoad());
   const [lines, setLines] = useState<LoadState<OeeSnapshot[]>>(emptyLoad());
   const [plants, setPlants] = useState<LoadState<OeeSnapshot[]>>(emptyLoad());
+
+  const refreshPlantOptions = useCallback(async () => {
+    try {
+      const res = await fetchPlants();
+      setPlantOptions(res.items ?? []);
+    } catch (error) {
+      setPlantOptions([]);
+      setValidationError(errMessage(error));
+    }
+  }, []);
+
+  const refreshLineOptions = useCallback(async (plantId: string) => {
+    if (!plantId) {
+      setLineOptions([]);
+      return;
+    }
+    try {
+      const res = await fetchLines({ plant_id: plantId });
+      setLineOptions(res.items ?? []);
+    } catch (error) {
+      setLineOptions([]);
+      setValidationError(errMessage(error));
+    }
+  }, []);
+
+  const refreshMachineOptions = useCallback(async (plantId: string, lineId?: string) => {
+    if (!plantId) {
+      setMachineOptions([]);
+      return;
+    }
+    try {
+      const res = await fetchMachines({
+        plant_id: plantId,
+        line_id: lineId || undefined,
+      });
+      setMachineOptions(res.items ?? []);
+    } catch (error) {
+      setMachineOptions([]);
+      setValidationError(errMessage(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPlantOptions();
+  }, [refreshPlantOptions]);
+
+  useEffect(() => {
+    if (!plantOptions.length) return;
+    const plantId =
+      draft.scope_type === "plant"
+        ? draft.scope_id
+        : draft.scope_type === "line"
+          ? lineOptions.find((line) => line.id === draft.scope_id)?.plant_id ?? ""
+          : machineOptions.find((machine) => machine.id === draft.scope_id)?.plant_id ?? "";
+
+    if (plantId) {
+      void refreshLineOptions(plantId);
+      void refreshMachineOptions(plantId, draft.scope_type === "machine" ? lineOptions.find((line) => line.id === draft.scope_id)?.id ?? undefined : undefined);
+    }
+  }, [draft.scope_type, draft.scope_id, lineOptions, machineOptions, plantOptions, refreshLineOptions, refreshMachineOptions]);
 
   const trendWindow = useMemo(() => {
     if (!applied) return null;
@@ -216,7 +286,7 @@ export function OeeDashboard() {
 
   const onApply = () => {
     if (!draft.scope_id || !isUuid(draft.scope_id)) {
-      setValidationError("scope_id must be a valid UUID.");
+      setValidationError("Select a valid plant, line, or machine from the dropdowns.");
       return;
     }
     if (!draft.period_start) {
@@ -226,6 +296,50 @@ export function OeeDashboard() {
     setValidationError(null);
     setApplied(draft);
     void loadAll(draft);
+  };
+
+  const onPlantChange = (plantId: string) => {
+    const next: DashboardFilters = {
+      ...draft,
+      scope_id: draft.scope_type === "plant" ? plantId : "",
+    };
+    setDraft(next);
+    setValidationError(null);
+    if (plantId) {
+      void refreshLineOptions(plantId);
+      void refreshMachineOptions(plantId);
+    } else {
+      setLineOptions([]);
+      setMachineOptions([]);
+    }
+  };
+
+  const onLineChange = (lineId: string) => {
+    const next: DashboardFilters = {
+      ...draft,
+      scope_type: "line",
+      scope_id: lineId,
+    };
+    setDraft(next);
+    setValidationError(null);
+    if (lineId) {
+      const selectedLine = lineOptions.find((line) => line.id === lineId);
+      if (selectedLine) {
+        void refreshMachineOptions(selectedLine.plant_id, lineId);
+      }
+    } else {
+      setMachineOptions([]);
+    }
+  };
+
+  const onMachineChange = (machineId: string) => {
+    const next: DashboardFilters = {
+      ...draft,
+      scope_type: "machine",
+      scope_id: machineId,
+    };
+    setDraft(next);
+    setValidationError(null);
   };
 
   const onReset = () => {
@@ -239,6 +353,8 @@ export function OeeDashboard() {
     setMachines(emptyLoad());
     setLines(emptyLoad());
     setPlants(emptyLoad());
+    setLineOptions([]);
+    setMachineOptions([]);
   };
 
   const onDrill = (scopeType: ScopeType, scopeId: string) => {
@@ -279,6 +395,12 @@ export function OeeDashboard() {
         onApply={onApply}
         onReset={onReset}
         validationError={validationError}
+        plantOptions={plantOptions}
+        lineOptions={lineOptions}
+        machineOptions={machineOptions}
+        onPlantChange={onPlantChange}
+        onLineChange={onLineChange}
+        onMachineChange={onMachineChange}
       />
 
       {!applied ? (

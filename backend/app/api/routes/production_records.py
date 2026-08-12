@@ -19,6 +19,7 @@ from app.api.schemas.production_records import (
     ProductionRecordRawResponse,
     RejectionEventResponse,
 )
+from app.core.rbac import require_permission
 from app.db.session import get_db
 from app.models.downtime_event import DowntimeEvent
 from app.models.production_record import ProductionRecord
@@ -38,6 +39,7 @@ def _safe_detail(message: str) -> str:
 @router.get(
     "/production-records/{production_record_id}",
     response_model=ProductionRecordRawResponse,
+    dependencies=[Depends(require_permission("production", "READ"))],
     summary="Get RAW production record",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -64,6 +66,7 @@ def get_production_record(
 @router.get(
     "/production-records/{production_record_id}/metrics",
     response_model=ProductionRecordMetricsResponse,
+    dependencies=[Depends(require_permission("production", "READ"))],
     summary="Get row-level OEE metrics",
     description=(
         "Development/internal — authentication not yet implemented. "
@@ -96,6 +99,7 @@ def get_production_record_metrics(
 @router.get(
     "/production-records/{production_record_id}/events",
     response_model=ProductionRecordEventsResponse,
+    dependencies=[Depends(require_permission("production", "READ"))],
     summary="Get downtime and rejection events",
     description=(
         "Development/internal — authentication not yet implemented. "
