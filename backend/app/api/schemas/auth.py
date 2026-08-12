@@ -10,6 +10,20 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email_or_employee_code: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+    confirm_password: str
+
+
+class GenericResponse(BaseModel):
+    detail: str
+
+
 class UserAuthResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -19,6 +33,8 @@ class UserAuthResponse(BaseModel):
     plant_id: UUID | None = None
     department_id: UUID | None = None
     is_active: bool
+    roles: list[str] = []
+    permissions: list[str] = []
 
 
 class LoginResponse(BaseModel):
@@ -36,3 +52,5 @@ class AuthenticatedUserResponse(BaseModel):
     plant_id: UUID | None = None
     department_id: UUID | None = None
     is_active: bool
+    roles: list[str] = []
+    permissions: list[str] = []

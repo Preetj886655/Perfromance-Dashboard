@@ -99,6 +99,9 @@ export type OeeSnapshotList = {
 export type DashboardFilters = {
   scope_type: ScopeType;
   scope_id: string;
+  plant_id?: string;
+  line_id?: string;
+  machine_id?: string;
   period_type: PeriodType;
   period_start: string;
 };

@@ -6,9 +6,34 @@
 
 
 
-Current Phase: **Phase 2 — Stage B IN PROGRESS (Authentication complete — authorization/RBAC still pending)**
+Current Phase: **Phase 2 — Stage B AUTHENTICATION EXPERIENCE COMPLETE**
 
+## Complete Authentication Experience
 
+This project now includes a complete local authentication UX for the approved manufacturing analytics application:
+
+- Sign In / Login
+- Sign Out / Logout
+- Session rehydration and expiry handling
+- Create Account policy with administrator-controlled messaging
+- Forgot Password flow with generic response behavior
+- Reset Password flow using a short-lived signed token
+- Local SUPER_ADMIN bootstrap and local admin password reset utilities
+- RBAC-aware navigation and access denied handling
+- Backend-only security enforcement with frontend UX only
+
+### Local development security notes
+
+- Local bootstrap and local admin reset are explicitly marked as LOCAL DEVELOPMENT ONLY.
+- No secrets or password hashes are printed.
+- Password reset tokens are signed, short-lived, and bound to the current password hash fingerprint to invalidate older links after a password change.
+- Production email delivery is still a missing dependency; the app does not claim to have production SMTP or reset-email infrastructure.
+
+### Production limitation
+
+A real password recovery email system requires a company email provider or SMTP / Microsoft Graph / Google Workspace integration, secure HTTPS, and production secret management. This layer remains intentionally local-only until that infrastructure is approved.
+
+User Management Admin UI complete.
 
 - Phase 1 — Project Foundation: **COMPLETE**
 - Authentication layer: **COMPLETE**

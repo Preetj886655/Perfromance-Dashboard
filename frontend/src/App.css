@@ -94,6 +94,35 @@ body {
   margin-top: 0.35rem;
 }
 
+.auth-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.auth-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--maroon);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.auth-link:hover {
+  opacity: 0.8;
+}
+
+.auth-card__footer {
+  margin-top: 1rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .auth-error {
   margin: 0;
   color: var(--danger);
@@ -121,6 +150,28 @@ body {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-end;
+  padding-top: 0.25rem;
+}
+
+.dash-header__branding {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dash-header__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 2.2rem;
+  background: var(--maroon);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-radius: 0.25rem;
+  box-shadow: 0 8px 18px rgba(140, 28, 40, 0.18);
 }
 
 .dash-header__eyebrow {
@@ -167,6 +218,11 @@ body {
 .panel--error {
   border-color: rgba(155, 44, 44, 0.35);
   color: var(--danger);
+}
+
+.panel--success {
+  border-color: rgba(31, 107, 58, 0.35);
+  color: var(--ok);
 }
 
 .panel h2,
@@ -236,6 +292,16 @@ body {
   margin: 0;
   color: var(--danger);
   font-size: 0.9rem;
+}
+
+.field__hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.field__hint--error {
+  color: var(--danger);
 }
 
 .btn {

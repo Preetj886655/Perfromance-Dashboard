@@ -17,6 +17,10 @@ type Props = {
   plantOptions?: PlantOption[];
   lineOptions?: LineOption[];
   machineOptions?: MachineOption[];
+  lineLoading?: boolean;
+  machineLoading?: boolean;
+  lineError?: string | null;
+  machineError?: string | null;
   onPlantChange?: (plantId: string) => void;
   onLineChange?: (lineId: string) => void;
   onMachineChange?: (machineId: string) => void;
@@ -35,11 +39,18 @@ export function FilterBar({
   plantOptions = [],
   lineOptions = [],
   machineOptions = [],
+  lineLoading = false,
+  machineLoading = false,
+  lineError = null,
+  machineError = null,
   onPlantChange,
   onLineChange,
   onMachineChange,
 }: Props) {
-  const scopeLabel = draft.scope_type === "plant" ? "Plant" : draft.scope_type === "line" ? "Line" : "Machine";
+  const showLine = draft.scope_type === "line" || draft.scope_type === "machine";
+  const showMachine = draft.scope_type === "machine";
+  const lineDisabled = disabled || !draft.plant_id || lineLoading || lineOptions.length === 0;
+  const machineDisabled = disabled || !draft.line_id || machineLoading || machineOptions.length === 0;
 
   return (
     <section className="panel filter-bar" aria-label="Dashboard filters">
@@ -54,8 +65,24 @@ export function FilterBar({
               const next: DashboardFilters = {
                 ...draft,
                 scope_type: nextType,
-                scope_id: nextType === "plant" ? "" : draft.scope_id,
+                scope_id: "",
+                line_id: nextType === "plant" ? "" : draft.line_id,
+                machine_id: nextType === "machine" ? draft.machine_id : "",
               };
+              if (nextType === "plant") {
+                next.plant_id = draft.plant_id ?? "";
+                next.scope_id = draft.plant_id ?? "";
+              } else if (nextType === "line") {
+                next.plant_id = draft.plant_id ?? "";
+                next.line_id = draft.line_id ?? "";
+                next.scope_id = next.line_id;
+                next.machine_id = "";
+              } else {
+                next.plant_id = draft.plant_id ?? "";
+                next.line_id = draft.line_id ?? "";
+                next.machine_id = draft.machine_id ?? "";
+                next.scope_id = next.machine_id;
+              }
               onChange(next);
             }}
           >
@@ -70,7 +97,7 @@ export function FilterBar({
         <label className="field">
           <span className="field__label">Plant</span>
           <select
-            value={draft.scope_type === "plant" ? draft.scope_id : plantOptions.find((plant) => plant.id === draft.scope_id)?.id ?? ""}
+            value={draft.plant_id ?? ""}
             disabled={disabled || plantOptions.length === 0}
             onChange={(e) => {
               const nextPlantId = e.target.value;
@@ -86,59 +113,61 @@ export function FilterBar({
           </select>
         </label>
 
-        {draft.scope_type === "line" || draft.scope_type === "machine" ? (
+        {showLine ? (
           <label className="field">
             <span className="field__label">Line</span>
             <select
-              value={draft.scope_id}
-              disabled={disabled || lineOptions.length === 0}
+              value={draft.line_id ?? ""}
+              disabled={lineDisabled}
               onChange={(e) => {
                 const nextLineId = e.target.value;
                 onLineChange?.(nextLineId);
               }}
             >
-              <option value="">Select line</option>
+              <option value="">{lineLoading ? "Loading lines..." : lineError ? "Unable to load lines" : "Select line"}</option>
               {lineOptions.map((line) => (
                 <option key={line.id} value={line.id}>
                   {line.code} — {line.name}
                 </option>
               ))}
             </select>
+            {lineError ? <span className="field__hint field__hint--error">{lineError}</span> : null}
+            {!lineError && !lineLoading && !draft.plant_id && !lineOptions.length ? (
+              <span className="field__hint">Select a plant to load lines</span>
+            ) : null}
+            {!lineError && !lineLoading && draft.plant_id && !lineOptions.length ? (
+              <span className="field__hint">No lines available</span>
+            ) : null}
           </label>
         ) : null}
 
-        {draft.scope_type === "machine" ? (
+        {showMachine ? (
           <label className="field">
             <span className="field__label">Machine</span>
             <select
-              value={draft.scope_id}
-              disabled={disabled || machineOptions.length === 0}
+              value={draft.machine_id ?? ""}
+              disabled={machineDisabled}
               onChange={(e) => {
                 const nextMachineId = e.target.value;
                 onMachineChange?.(nextMachineId);
               }}
             >
-              <option value="">Select machine</option>
+              <option value="">{machineLoading ? "Loading machines..." : machineError ? "Unable to load machines" : "Select machine"}</option>
               {machineOptions.map((machine) => (
                 <option key={machine.id} value={machine.id}>
                   {machine.code} — {machine.name}
                 </option>
               ))}
             </select>
+            {machineError ? <span className="field__hint field__hint--error">{machineError}</span> : null}
+            {!machineError && !machineLoading && !draft.line_id && !machineOptions.length ? (
+              <span className="field__hint">Select a line to load machines</span>
+            ) : null}
+            {!machineError && !machineLoading && draft.line_id && !machineOptions.length ? (
+              <span className="field__hint">No machines available</span>
+            ) : null}
           </label>
         ) : null}
-
-        <label className="field">
-          <span className="field__label">{scopeLabel} scope</span>
-          <input
-            type="text"
-            value={draft.scope_id}
-            readOnly
-            placeholder="Selected ID"
-            spellCheck={false}
-            aria-label={`${scopeLabel} scope id`}
-          />
-        </label>
 
         <label className="field">
           <span className="field__label">Period type</span>

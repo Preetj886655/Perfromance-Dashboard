@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -57,6 +58,28 @@ def create_access_token(*, user_id: str, email: str, employee_code: str, expires
     return jwt.encode(payload, _token_secret(), algorithm=settings.auth_algorithm)
 
 
+def create_password_reset_token(user: User, *, expires_delta: timedelta | None = None) -> str:
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=15)
+
+    if not user.password_hash:
+        raise ValueError("User does not have a password hash configured.")
+
+    fingerprint = hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user.id),
+        "email": user.email,
+        "employee_code": user.employee_code,
+        "typ": "password_reset",
+        "ver": 1,
+        "pw_fingerprint": fingerprint,
+        "iat": int(now.timestamp()),
+        "exp": int((now + expires_delta).timestamp()),
+    }
+    return jwt.encode(payload, _token_secret(), algorithm=settings.auth_algorithm)
+
+
 def decode_access_token(token: str) -> dict[str, Any]:
     try:
         return jwt.decode(
@@ -90,6 +113,36 @@ def authenticate_user(db: Session, email_or_employee_code: str, password: str) -
         return None
     if not verify_password(password, user.password_hash):
         return None
+    return user
+
+
+def verify_password_reset_token(db: Session, token: str) -> User | None:
+    try:
+        payload = jwt.decode(
+            token,
+            _token_secret(),
+            algorithms=[settings.auth_algorithm],
+            options={"require": ["exp", "sub", "typ", "pw_fingerprint"]},
+        )
+    except jwt.PyJWTError:
+        return None
+
+    if payload.get("typ") != "password_reset":
+        return None
+
+    try:
+        user_id = uuid.UUID(str(payload.get("sub")))
+    except (TypeError, ValueError):
+        return None
+
+    user = db.get(User, user_id)
+    if user is None or not user.is_active or not user.password_hash:
+        return None
+
+    expected_fingerprint = hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()
+    if payload.get("pw_fingerprint") != expected_fingerprint:
+        return None
+
     return user
 
 

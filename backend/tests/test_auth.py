@@ -9,7 +9,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    create_password_reset_token,
+    hash_password,
+    verify_password,
+)
 from app.db.session import get_db, get_engine
 from app.main import app
 from app.models.user import User
@@ -179,7 +184,7 @@ def test_auth_dependency_rejects_invalid_token(client: TestClient) -> None:
 def test_auth_dependency_rejects_tampered_token(client: TestClient, db_session: Session) -> None:
     user = _make_user(db_session, email="henry@patil.local", employee_code="EMP-8008", password="TamperPass!9")
     token = create_access_token(user_id=str(user.id), email=user.email, employee_code=user.employee_code)
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    tampered = token + "A"
 
     response = client.get(
         "/api/v1/auth/me",
@@ -229,3 +234,68 @@ def test_hash_password_does_not_equal_plaintext() -> None:
     hashed = hash_password("PlainText@123")
     assert hashed != "PlainText@123"
     assert hashed.startswith("$2b$")
+
+
+def test_auth_forgot_password_returns_generic_response(client: TestClient, db_session: Session) -> None:
+    _make_user(db_session, email="julia@patil.local", employee_code="EMP-1111", password="Secret123!")
+
+    response = client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email_or_employee_code": "julia@patil.local"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["detail"] == "If the account exists, password reset instructions have been provided."
+
+
+def test_auth_reset_password_valid_token_updates_hash(client: TestClient, db_session: Session) -> None:
+    user = _make_user(db_session, email="karen@patil.local", employee_code="EMP-1212", password="OldPass!23")
+    token = create_password_reset_token(user)
+
+    response = client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": token,
+            "password": "NewPass!45",
+            "confirm_password": "NewPass!45",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    db_session.refresh(user)
+    assert verify_password("NewPass!45", user.password_hash)
+    assert not verify_password("OldPass!23", user.password_hash)
+    assert response.json()["detail"] == "Password reset successful. Please sign in."
+
+
+def test_auth_reset_password_rejects_expired_token(client: TestClient, db_session: Session) -> None:
+    user = _make_user(db_session, email="leo@patil.local", employee_code="EMP-1313", password="OldPass!23")
+    token = create_password_reset_token(user, expires_delta=timedelta(minutes=-5))
+
+    response = client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": token,
+            "password": "NewPass!45",
+            "confirm_password": "NewPass!45",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "This password reset link is invalid or expired."
+
+
+def test_auth_reset_password_rejects_invalid_token(client: TestClient, db_session: Session) -> None:
+    _make_user(db_session, email="maya@patil.local", employee_code="EMP-1414", password="OldPass!23")
+
+    response = client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "not-a-real-token",
+            "password": "NewPass!45",
+            "confirm_password": "NewPass!45",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "This password reset link is invalid or expired."

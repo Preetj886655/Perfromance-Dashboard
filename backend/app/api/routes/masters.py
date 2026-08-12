@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.schemas.masters import (
+    DepartmentListResponse,
+    DepartmentResponse,
     LineListResponse,
     LineResponse,
     MachineListResponse,
@@ -22,6 +24,7 @@ from app.api.schemas.masters import (
 )
 from app.core.rbac import require_permission
 from app.db.session import get_db
+from app.models.department import Department
 from app.models.line import Line
 from app.models.machine import Machine
 from app.models.operator import Operator
@@ -47,6 +50,20 @@ def list_plants(db: Session = Depends(get_db)) -> PlantListResponse:
     return PlantListResponse(
         items=[PlantResponse.model_validate(p) for p in plants],
         count=len(plants),
+    )
+
+
+@router.get(
+    "/departments",
+    response_model=DepartmentListResponse,
+    dependencies=[Depends(require_permission("masters", "READ"))],
+    summary="List departments",
+)
+def list_departments(db: Session = Depends(get_db)) -> DepartmentListResponse:
+    rows = db.scalars(select(Department).order_by(Department.code)).all()
+    return DepartmentListResponse(
+        items=[DepartmentResponse.model_validate(d) for d in rows],
+        count=len(rows),
     )
 
 

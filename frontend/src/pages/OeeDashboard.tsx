@@ -33,6 +33,9 @@ import { trendWindowFor } from "../utils/trendWindow";
 const DEFAULT_FILTERS: DashboardFilters = {
   scope_type: "plant",
   scope_id: "",
+  plant_id: "",
+  line_id: "",
+  machine_id: "",
   period_type: "day",
   period_start: new Date().toISOString().slice(0, 10),
 };
@@ -64,6 +67,10 @@ export function OeeDashboard() {
   const [plantOptions, setPlantOptions] = useState<PlantOption[]>([]);
   const [lineOptions, setLineOptions] = useState<LineOption[]>([]);
   const [machineOptions, setMachineOptions] = useState<MachineOption[]>([]);
+  const [lineLoading, setLineLoading] = useState(false);
+  const [machineLoading, setMachineLoading] = useState(false);
+  const [lineError, setLineError] = useState<string | null>(null);
+  const [machineError, setMachineError] = useState<string | null>(null);
 
   const [snapshot, setSnapshot] = useState<LoadState<OeeSnapshot>>(emptyLoad());
   const [summary, setSummary] = useState<LoadState<OeeSnapshot>>(emptyLoad());
@@ -86,22 +93,34 @@ export function OeeDashboard() {
   const refreshLineOptions = useCallback(async (plantId: string) => {
     if (!plantId) {
       setLineOptions([]);
+      setLineError(null);
+      setLineLoading(false);
       return;
     }
+
+    setLineLoading(true);
+    setLineError(null);
     try {
       const res = await fetchLines({ plant_id: plantId });
       setLineOptions(res.items ?? []);
     } catch (error) {
       setLineOptions([]);
-      setValidationError(errMessage(error));
+      setLineError(errMessage(error));
+    } finally {
+      setLineLoading(false);
     }
   }, []);
 
   const refreshMachineOptions = useCallback(async (plantId: string, lineId?: string) => {
     if (!plantId) {
       setMachineOptions([]);
+      setMachineError(null);
+      setMachineLoading(false);
       return;
     }
+
+    setMachineLoading(true);
+    setMachineError(null);
     try {
       const res = await fetchMachines({
         plant_id: plantId,
@@ -110,7 +129,9 @@ export function OeeDashboard() {
       setMachineOptions(res.items ?? []);
     } catch (error) {
       setMachineOptions([]);
-      setValidationError(errMessage(error));
+      setMachineError(errMessage(error));
+    } finally {
+      setMachineLoading(false);
     }
   }, []);
 
@@ -120,18 +141,20 @@ export function OeeDashboard() {
 
   useEffect(() => {
     if (!plantOptions.length) return;
-    const plantId =
-      draft.scope_type === "plant"
-        ? draft.scope_id
-        : draft.scope_type === "line"
-          ? lineOptions.find((line) => line.id === draft.scope_id)?.plant_id ?? ""
-          : machineOptions.find((machine) => machine.id === draft.scope_id)?.plant_id ?? "";
 
-    if (plantId) {
-      void refreshLineOptions(plantId);
-      void refreshMachineOptions(plantId, draft.scope_type === "machine" ? lineOptions.find((line) => line.id === draft.scope_id)?.id ?? undefined : undefined);
+    if (!draft.plant_id) {
+      setLineOptions([]);
+      setMachineOptions([]);
+      return;
     }
-  }, [draft.scope_type, draft.scope_id, lineOptions, machineOptions, plantOptions, refreshLineOptions, refreshMachineOptions]);
+
+    void refreshLineOptions(draft.plant_id);
+    if (draft.scope_type === "machine") {
+      void refreshMachineOptions(draft.plant_id, draft.line_id || undefined);
+    } else {
+      void refreshMachineOptions(draft.plant_id);
+    }
+  }, [draft.plant_id, draft.scope_type, draft.line_id, plantOptions.length, refreshLineOptions, refreshMachineOptions]);
 
   const trendWindow = useMemo(() => {
     if (!applied) return null;
@@ -285,7 +308,8 @@ export function OeeDashboard() {
   }, []);
 
   const onApply = () => {
-    if (!draft.scope_id || !isUuid(draft.scope_id)) {
+    const scopeId = draft.scope_type === "plant" ? draft.plant_id ?? "" : draft.scope_type === "line" ? draft.line_id ?? "" : draft.machine_id ?? "";
+    if (!scopeId || !isUuid(scopeId)) {
       setValidationError("Select a valid plant, line, or machine from the dropdowns.");
       return;
     }
@@ -293,16 +317,26 @@ export function OeeDashboard() {
       setValidationError("period_start is required.");
       return;
     }
+    const next = {
+      ...draft,
+      scope_id: scopeId,
+    };
     setValidationError(null);
-    setApplied(draft);
-    void loadAll(draft);
+    setApplied(next);
+    void loadAll(next);
   };
 
   const onPlantChange = (plantId: string) => {
     const next: DashboardFilters = {
       ...draft,
+      plant_id: plantId,
+      line_id: "",
+      machine_id: "",
       scope_id: draft.scope_type === "plant" ? plantId : "",
     };
+    if (draft.scope_type === "plant") {
+      next.scope_id = plantId;
+    }
     setDraft(next);
     setValidationError(null);
     if (plantId) {
@@ -317,9 +351,13 @@ export function OeeDashboard() {
   const onLineChange = (lineId: string) => {
     const next: DashboardFilters = {
       ...draft,
-      scope_type: "line",
-      scope_id: lineId,
+      line_id: lineId,
+      machine_id: "",
+      scope_id: draft.scope_type === "line" ? lineId : "",
     };
+    if (draft.scope_type === "line") {
+      next.scope_id = lineId;
+    }
     setDraft(next);
     setValidationError(null);
     if (lineId) {
@@ -335,7 +373,7 @@ export function OeeDashboard() {
   const onMachineChange = (machineId: string) => {
     const next: DashboardFilters = {
       ...draft,
-      scope_type: "machine",
+      machine_id: machineId,
       scope_id: machineId,
     };
     setDraft(next);
@@ -355,6 +393,8 @@ export function OeeDashboard() {
     setPlants(emptyLoad());
     setLineOptions([]);
     setMachineOptions([]);
+    setLineError(null);
+    setMachineError(null);
   };
 
   const onDrill = (scopeType: ScopeType, scopeId: string) => {
@@ -377,12 +417,12 @@ export function OeeDashboard() {
 
   const machinesGap =
     applied && applied.scope_type !== "plant"
-      ? "Machine table requires plant_id (GET /oee/machines). Set scope_type=plant and use plants.id as scope_id — no master lookup API and no plant_id on machine/line snapshots for reverse lookup."
+      ? "Machine detail tables are scoped by plant_id. Use plant scope for the plant-level drilldown, or select a plant before reviewing machine-level snapshots."
       : null;
 
   const linesGap =
     applied && applied.scope_type !== "plant"
-      ? "Line table requires plant_id (GET /oee/lines). Set scope_type=plant to load plant lines."
+      ? "Line detail tables are also grouped by plant_id. Choose a plant scope to load the available lines for this dashboard view."
       : null;
 
   return (
@@ -398,6 +438,10 @@ export function OeeDashboard() {
         plantOptions={plantOptions}
         lineOptions={lineOptions}
         machineOptions={machineOptions}
+        lineLoading={lineLoading}
+        machineLoading={machineLoading}
+        lineError={lineError}
+        machineError={machineError}
         onPlantChange={onPlantChange}
         onLineChange={onLineChange}
         onMachineChange={onMachineChange}
@@ -407,8 +451,7 @@ export function OeeDashboard() {
         <section className="panel panel--muted">
           <h2>Ready</h2>
           <p>
-            Enter a known plant / line / machine UUID and period, then Apply.
-            There is no master-list API yet — scope_id is entered manually.
+            Select a plant, line, or machine from the master-data dropdowns and apply the period filter.
           </p>
         </section>
       ) : (

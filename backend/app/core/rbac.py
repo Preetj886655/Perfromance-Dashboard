@@ -37,6 +37,7 @@ ROLE_PERMISSION_MATRIX: dict[str, set[tuple[str, str]]] = {
         ("imports", "READ"),
         ("imports", "CREATE"),
         ("masters", "READ"),
+        ("users", "MANAGE"),
         ("reports", "READ"),
         ("reports", "EXPORT"),
     },
@@ -49,6 +50,7 @@ ROLE_PERMISSION_MATRIX: dict[str, set[tuple[str, str]]] = {
         ("imports", "READ"),
         ("imports", "CREATE"),
         ("masters", "READ"),
+        ("users", "MANAGE"),
         ("reports", "READ"),
         ("reports", "EXPORT"),
     },
@@ -181,6 +183,26 @@ def user_has_permission(db: Session, user: User, module: str, action: str) -> bo
 
 def role_codes_for_user(db: Session, user: User) -> set[str]:
     return {role.code for role in get_user_roles(db, user)}
+
+
+def user_permission_codes(db: Session, user: User) -> set[str]:
+    permissions: set[str] = set()
+    roles = get_user_roles(db, user)
+    if not roles:
+        return permissions
+
+    for role in roles:
+        if not role.is_active:
+            continue
+        rows = db.scalars(
+            select(RolePermission).where(
+                RolePermission.role_id == role.id,
+                RolePermission.is_allowed.is_(True),
+            )
+        ).all()
+        for row in rows:
+            permissions.add(f"{row.module}:{row.action}")
+    return permissions
 
 
 def enforce_scope_match(

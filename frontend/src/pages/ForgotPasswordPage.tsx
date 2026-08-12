@@ -1,33 +1,37 @@
 import { type FormEvent, useState } from "react";
 
-import type { LoginCredentials } from "../auth/authTypes";
+const API_BASE = "/api/v1/auth";
 
-type LoginPageProps = {
-  onSubmit: (credentials: LoginCredentials) => Promise<void>;
-};
-
-export function LoginPage({ onSubmit }: LoginPageProps) {
+export function ForgotPasswordPage() {
   const [identifier, setIdentifier] = useState("");
-  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setMessage(null);
     setIsLoading(true);
 
     try {
-      await onSubmit({
-        email_or_employee_code: identifier.trim(),
-        password,
+      const response = await fetch(`${API_BASE}/forgot-password`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email_or_employee_code: identifier.trim() }),
       });
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error && submitError.message
-          ? submitError.message
-          : "Unable to sign in. Please try again.",
-      );
+
+      const payload = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
+      if (!response.ok) {
+        throw new Error(payload?.detail ?? "Something went wrong. Please try again.");
+      }
+
+      setMessage(payload?.detail ?? "If the account exists, password reset instructions have been provided.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Something went wrong. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -38,7 +42,7 @@ export function LoginPage({ onSubmit }: LoginPageProps) {
       <div className="auth-card">
         <div className="auth-brand">
           <span className="auth-brand__eyebrow">Patil Manufacturing Analytics</span>
-          <h1>Sign in</h1>
+          <h1>Forgot password</h1>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
@@ -54,30 +58,16 @@ export function LoginPage({ onSubmit }: LoginPageProps) {
             />
           </label>
 
-          <label className="field">
-            <span className="field__label">Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              placeholder="Enter password"
-              required
-            />
-          </label>
-
           {error ? <p className="auth-error">{error}</p> : null}
+          {message ? <p className="auth-error" style={{ color: "var(--ok)" }}>{message}</p> : null}
 
           <button className="btn btn--primary auth-submit" type="submit" disabled={isLoading}>
-            {isLoading ? "Signing in..." : "Sign In"}
+            {isLoading ? "Sending..." : "Send reset instructions"}
           </button>
 
           <div className="auth-actions">
-            <button type="button" className="auth-link" onClick={() => window.location.hash = "#/forgot-password"}>
-              Forgot password?
-            </button>
-            <button type="button" className="auth-link" onClick={() => window.location.hash = "#/create-account"}>
-              Create Account
+            <button type="button" className="auth-link" onClick={() => window.location.hash = "#/login"}>
+              Back to sign in
             </button>
           </div>
         </form>

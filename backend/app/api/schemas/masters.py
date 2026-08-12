@@ -52,6 +52,19 @@ class MachineListResponse(BaseModel):
     count: int
 
 
+class DepartmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    code: str
+    name: str
+
+
+class DepartmentListResponse(BaseModel):
+    items: list[DepartmentResponse]
+    count: int
+
+
 class PartResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

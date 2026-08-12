@@ -18,6 +18,12 @@ import type {
   ShiftOption,
 } from "../types/dashboard";
 
+export type DepartmentOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
 const BASE = "/api/v1/dashboard";
 
 export type ScopePeriodQuery = {
@@ -124,6 +130,10 @@ export function fetchOeePlants(params: {
 
 export function fetchPlants(): Promise<{ items: PlantOption[]; count: number }> {
   return apiGet<{ items: PlantOption[]; count: number }>("/api/v1/plants");
+}
+
+export function fetchDepartments(): Promise<{ items: DepartmentOption[]; count: number }> {
+  return apiGet<{ items: DepartmentOption[]; count: number }>("/api/v1/departments");
 }
 
 export function fetchLines(params: { plant_id?: string }): Promise<{ items: LineOption[]; count: number }> {

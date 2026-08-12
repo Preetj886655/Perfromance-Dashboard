@@ -84,6 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setIsForbidden(false);
     setIsLoading(false);
+    if (typeof window !== "undefined") {
+      window.location.hash = "#/login";
+    }
   }, []);
 
   const clearForbidden = useCallback(() => {
