@@ -76,11 +76,13 @@ Default credentials (local only):
 - DB: `pril_analytics`
 - User: `pril`
 - Password: `pril_dev_password`
-- Port: `5432`
+- Host port: `5433` (maps to container `5432`; avoids clashing with a host PostgreSQL on `5432`)
+
+> **Important:** Backend/`alembic` must use the same host/port as Compose (`POSTGRES_HOST` / `POSTGRES_PORT` in `backend/.env`). On Windows, a local `postgresql-x64-16` service often already owns `5432`; pointing Alembic at `localhost:5432` migrates that instance while `docker exec pril-postgres` still shows an empty DB.
 
 ### Alternative: local PostgreSQL 16
 
-Create role/database to match `.env.example`, then skip Compose until WSL/Docker is available.
+Create role/database to match `.env.example`, set `backend/.env` `POSTGRES_HOST` / `POSTGRES_PORT` to that instance, then skip Compose until WSL/Docker is available.
 ## 4. Start the backend
 
 ```powershell

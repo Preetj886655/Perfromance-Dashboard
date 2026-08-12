@@ -13,7 +13,7 @@ def test_root() -> None:
     response = client.get("/")
     assert response.status_code == 200
     body = response.json()
-    assert body["phase"] == "1-foundation"
+    assert body["phase"] == "2-dashboard-api"
     assert body["health"] == "/api/v1/health"
 
 

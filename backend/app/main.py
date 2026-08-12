@@ -1,17 +1,17 @@
-"""Patil Manufacturing Analytics — FastAPI application entrypoint (Phase 1 foundation)."""
+"""Patil Manufacturing Analytics — FastAPI application entrypoint."""
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health
+from app.api.routes import dashboard, health, imports, production_records
 from app.core.config import settings
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Startup: nothing heavy in Phase 1
+    # Startup: nothing heavy yet
     yield
     # Shutdown: nothing to tear down yet
 
@@ -19,7 +19,11 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
-    description="PRIL Manufacturing Analytics API — Phase 1 foundation",
+    description=(
+        "PRIL Manufacturing Analytics API. "
+        "Development/internal: authentication and RBAC are not yet implemented. "
+        "Do not expose beyond trusted environments without auth."
+    ),
     lifespan=lifespan,
 )
 
@@ -32,13 +36,17 @@ app.add_middleware(
 )
 
 app.include_router(health.router, tags=["health"])
+app.include_router(imports.router)
+app.include_router(production_records.router)
+app.include_router(dashboard.router)
 
 
 @app.get("/")
 def root() -> dict[str, str]:
     return {
         "service": settings.app_name,
-        "phase": "1-foundation",
+        "phase": "2-dashboard-api",
         "docs": "/docs",
         "health": "/api/v1/health",
+        "security": "development/internal — auth not implemented",
     }

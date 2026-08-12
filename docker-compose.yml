@@ -8,7 +8,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-pril}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pril_dev_password}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Default 5433 avoids colliding with a host PostgreSQL already bound to 5432 (common on Windows).
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pril_postgres_data:/var/lib/postgresql/data
     healthcheck:

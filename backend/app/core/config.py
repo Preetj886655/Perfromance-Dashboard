@@ -21,8 +21,11 @@ class Settings(BaseSettings):
     ]
 
     # PostgreSQL — credentials come from env; never commit real secrets
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
+    # Prefer 127.0.0.1 over localhost so clients do not resolve to a different
+    # stack via IPv6 when both a host Postgres and Docker publish listeners.
+    postgres_host: str = "127.0.0.1"
+    # Match docker-compose host publish default (5433) — avoids Windows service on 5432.
+    postgres_port: int = 5433
     postgres_db: str = "pril_analytics"
     postgres_user: str = "pril"
     postgres_password: str = "pril_dev_password"
