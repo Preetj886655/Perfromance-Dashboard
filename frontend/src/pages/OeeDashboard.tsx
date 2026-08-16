@@ -63,12 +63,15 @@ export function OeeDashboard() {
   const [draft, setDraft] = useState<DashboardFilters>(DEFAULT_FILTERS);
   const [applied, setApplied] = useState<DashboardFilters | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [sseStatus, setSseStatus] = useState<"idle" | "connecting" | "live" | "offline">("idle");
 
   const [plantOptions, setPlantOptions] = useState<PlantOption[]>([]);
   const [lineOptions, setLineOptions] = useState<LineOption[]>([]);
   const [machineOptions, setMachineOptions] = useState<MachineOption[]>([]);
+  const [plantLoading, setPlantLoading] = useState(true);
   const [lineLoading, setLineLoading] = useState(false);
   const [machineLoading, setMachineLoading] = useState(false);
+  const [plantError, setPlantError] = useState<string | null>(null);
   const [lineError, setLineError] = useState<string | null>(null);
   const [machineError, setMachineError] = useState<string | null>(null);
 
@@ -81,12 +84,16 @@ export function OeeDashboard() {
   const [plants, setPlants] = useState<LoadState<OeeSnapshot[]>>(emptyLoad());
 
   const refreshPlantOptions = useCallback(async () => {
+    setPlantLoading(true);
+    setPlantError(null);
     try {
       const res = await fetchPlants();
       setPlantOptions(res.items ?? []);
     } catch (error) {
       setPlantOptions([]);
-      setValidationError(errMessage(error));
+      setPlantError(errMessage(error));
+    } finally {
+      setPlantLoading(false);
     }
   }, []);
 
@@ -307,6 +314,41 @@ export function OeeDashboard() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!applied) {
+      setSseStatus("idle");
+      return;
+    }
+
+    const token = window.localStorage.getItem("pril_access_token");
+    if (!token) {
+      setSseStatus("offline");
+      return;
+    }
+
+    setSseStatus("connecting");
+    const url = `${window.location.origin}${import.meta.env.BASE_URL}api/v1/dashboard/stream?token=${encodeURIComponent(token)}`;
+    const source = new EventSource(url);
+
+    source.addEventListener("open", () => {
+      setSseStatus("live");
+    });
+
+    source.addEventListener("oee_updated", () => {
+      void loadAll(applied);
+    });
+
+    source.onerror = () => {
+      setSseStatus("offline");
+      source.close();
+    };
+
+    return () => {
+      source.close();
+      setSseStatus("idle");
+    };
+  }, [applied, loadAll]);
+
   const onApply = () => {
     const scopeId = draft.scope_type === "plant" ? draft.plant_id ?? "" : draft.scope_type === "line" ? draft.line_id ?? "" : draft.machine_id ?? "";
     if (!scopeId || !isUuid(scopeId)) {
@@ -427,7 +469,7 @@ export function OeeDashboard() {
 
   return (
     <div className="dash">
-      <DashboardHeader />
+      <DashboardHeader sseStatus={sseStatus} />
 
       <FilterBar
         draft={draft}
@@ -436,6 +478,8 @@ export function OeeDashboard() {
         onReset={onReset}
         validationError={validationError}
         plantOptions={plantOptions}
+        plantLoading={plantLoading}
+        plantError={plantError}
         lineOptions={lineOptions}
         machineOptions={machineOptions}
         lineLoading={lineLoading}

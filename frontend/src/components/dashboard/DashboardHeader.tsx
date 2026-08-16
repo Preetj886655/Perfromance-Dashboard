@@ -1,8 +1,23 @@
 type Props = {
   subtitle?: string;
+  sseStatus?: "idle" | "connecting" | "live" | "offline";
 };
 
-export function DashboardHeader({ subtitle }: Props) {
+export function DashboardHeader({ subtitle, sseStatus }: Props) {
+  let statusLabel = "";
+  let statusClass = "";
+
+  if (sseStatus === "live") {
+    statusLabel = "● Live";
+    statusClass = "live";
+  } else if (sseStatus === "connecting") {
+    statusLabel = "◐ Connecting";
+    statusClass = "connecting";
+  } else if (sseStatus === "offline") {
+    statusLabel = "○ Offline";
+    statusClass = "offline";
+  }
+
   return (
     <header className="dash-header">
       <div className="dash-header__branding">
@@ -15,10 +30,17 @@ export function DashboardHeader({ subtitle }: Props) {
           {subtitle ? <p className="dash-header__subtitle">{subtitle}</p> : null}
         </div>
       </div>
-      <p className="dash-header__note">
-        Read-only snapshots from <code>/api/v1/dashboard</code> — no live machine
-        status, no client-side OEE math.
-      </p>
+      <div className="dash-header__info">
+        <p className="dash-header__note">
+          Read-only snapshots from <code>/api/v1/dashboard</code> — no live machine
+          status, no client-side OEE math.
+        </p>
+        {statusLabel && (
+          <p className={`dash-header__status dash-header__status--${statusClass}`}>
+            {statusLabel}
+          </p>
+        )}
+      </div>
     </header>
   );
 }

@@ -4,17 +4,20 @@ import { useAuth } from "./auth/useAuth";
 import { LoginPage } from "./pages/LoginPage";
 import { OeeDashboard } from "./pages/OeeDashboard";
 import { UserManagementPage } from "./pages/UserManagementPage";
+import { MasterDataPage } from "./pages/MasterDataPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { CreateAccountPage } from "./pages/CreateAccountPage";
 import "./App.css";
 
-type ViewKey = "dashboard" | "users";
+type ViewKey = "dashboard" | "users" | "masters";
 type Screen = "login" | "forgot-password" | "reset-password" | "create-account" | "app";
 
 function resolveHashView(): ViewKey {
   const hash = typeof window === "undefined" ? "" : window.location.hash;
-  return hash === "#/users" ? "users" : "dashboard";
+  if (hash === "#/users") return "users";
+  if (hash === "#/masters") return "masters";
+  return "dashboard";
 }
 
 function getScreenFromLocation(): Screen {
@@ -41,6 +44,7 @@ function AppView() {
   }, []);
 
   const canManageUsers = hasPermission("users", "MANAGE");
+  const canCreateMasters = hasPermission("masters", "CREATE");
 
   const openDashboard = () => {
     window.location.hash = "#/dashboard";
@@ -50,6 +54,11 @@ function AppView() {
   const openUsers = () => {
     window.location.hash = "#/users";
     setView("users");
+  };
+
+  const openMasters = () => {
+    window.location.hash = "#/masters";
+    setView("masters");
   };
 
   if (isLoading) {
@@ -96,7 +105,7 @@ function AppView() {
 
   return (
     <div className="shell shell--wide">
-      {canManageUsers ? (
+      {canManageUsers || canCreateMasters ? (
         <nav className="top-nav" aria-label="Main navigation">
           <button
             type="button"
@@ -105,17 +114,37 @@ function AppView() {
           >
             Dashboard
           </button>
-          <button
-            type="button"
-            className={view === "users" ? "btn btn--primary" : "btn"}
-            onClick={openUsers}
-          >
-            User Management
-          </button>
+          {canCreateMasters ? (
+            <button
+              type="button"
+              className={view === "masters" ? "btn btn--primary" : "btn"}
+              onClick={openMasters}
+            >
+              Master Data
+            </button>
+          ) : null}
+          {canManageUsers ? (
+            <button
+              type="button"
+              className={view === "users" ? "btn btn--primary" : "btn"}
+              onClick={openUsers}
+            >
+              User Management
+            </button>
+          ) : null}
         </nav>
       ) : null}
 
-      {view === "users" ? (
+      {view === "masters" ? (
+        canCreateMasters ? (
+          <MasterDataPage />
+        ) : (
+          <div className="panel panel--error auth-denied">
+            <h2>Access denied</h2>
+            <p>You do not have permission to manage master data.</p>
+          </div>
+        )
+      ) : view === "users" ? (
         canManageUsers ? (
           <UserManagementPage />
         ) : (

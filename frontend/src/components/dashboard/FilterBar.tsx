@@ -15,11 +15,13 @@ type Props = {
   disabled?: boolean;
   validationError?: string | null;
   plantOptions?: PlantOption[];
+  plantLoading?: boolean;
+  plantError?: string | null;
   lineOptions?: LineOption[];
-  machineOptions?: MachineOption[];
   lineLoading?: boolean;
-  machineLoading?: boolean;
   lineError?: string | null;
+  machineOptions?: MachineOption[];
+  machineLoading?: boolean;
   machineError?: string | null;
   onPlantChange?: (plantId: string) => void;
   onLineChange?: (lineId: string) => void;
@@ -37,11 +39,13 @@ export function FilterBar({
   disabled,
   validationError,
   plantOptions = [],
+  plantLoading = false,
+  plantError = null,
   lineOptions = [],
-  machineOptions = [],
   lineLoading = false,
-  machineLoading = false,
   lineError = null,
+  machineOptions = [],
+  machineLoading = false,
   machineError = null,
   onPlantChange,
   onLineChange,
@@ -98,19 +102,20 @@ export function FilterBar({
           <span className="field__label">Plant</span>
           <select
             value={draft.plant_id ?? ""}
-            disabled={disabled || plantOptions.length === 0}
+            disabled={disabled || plantLoading}
             onChange={(e) => {
               const nextPlantId = e.target.value;
               onPlantChange?.(nextPlantId);
             }}
           >
-            <option value="">Select plant</option>
+            <option value="">{plantLoading ? "Loading plants..." : plantError ? "Unable to load plants" : "Select plant"}</option>
             {plantOptions.map((plant) => (
               <option key={plant.id} value={plant.id}>
                 {plant.code} — {plant.name}
               </option>
             ))}
           </select>
+          {plantError ? <span className="field__hint field__hint--error">{plantError}</span> : null}
         </label>
 
         {showLine ? (

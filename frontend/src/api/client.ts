@@ -90,6 +90,96 @@ export async function apiGet<T>(
   return body as T;
 }
 
+export async function apiPost<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(buildUrl(path), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...getTokenHeader(),
+    },
+    body: JSON.stringify(body),
+  });
+
+  let responseBody: unknown = null;
+  const text = await response.text();
+  if (text) {
+    try {
+      responseBody = JSON.parse(text) as unknown;
+    } catch {
+      responseBody = text;
+    }
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAccessToken();
+      window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
+    }
+    if (response.status === 403) {
+      window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
+    }
+
+    const detail =
+      responseBody &&
+      typeof responseBody === "object" &&
+      responseBody !== null &&
+      "detail" in responseBody &&
+      (responseBody as { detail: unknown }).detail !== undefined
+        ? String((responseBody as { detail: unknown }).detail)
+        : `Request failed (${response.status})`;
+    throw new ApiRequestError(response.status, detail);
+  }
+
+  return responseBody as T;
+}
+
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(buildUrl(path), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      ...getTokenHeader(),
+    },
+    body: formData,
+  });
+
+  let responseBody: unknown = null;
+  const text = await response.text();
+  if (text) {
+    try {
+      responseBody = JSON.parse(text) as unknown;
+    } catch {
+      responseBody = text;
+    }
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAccessToken();
+      window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
+    }
+    if (response.status === 403) {
+      window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
+    }
+
+    const detail =
+      responseBody &&
+      typeof responseBody === "object" &&
+      responseBody !== null &&
+      "detail" in responseBody &&
+      (responseBody as { detail: unknown }).detail !== undefined
+        ? String((responseBody as { detail: unknown }).detail)
+        : `Request failed (${response.status})`;
+    throw new ApiRequestError(response.status, detail);
+  }
+
+  return responseBody as T;
+}
+
 export function getApiBase(): string {
   return API_BASE;
 }

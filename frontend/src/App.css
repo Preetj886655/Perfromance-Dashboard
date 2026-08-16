@@ -205,6 +205,33 @@ body {
   font-size: 0.85em;
 }
 
+.dash-header__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.dash-header__status {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.dash-header__status--live {
+  color: #2ba84a;
+}
+
+.dash-header__status--connecting {
+  color: #f5a623;
+}
+
+.dash-header__status--offline {
+  color: #bb2d2d;
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);

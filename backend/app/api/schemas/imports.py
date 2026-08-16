@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+_ALLOWED_SOURCE_TYPES = ("excel", "csv", "form", "sheets", "manual", "api")
+
 
 class DprOeeImportResponse(BaseModel):
     """Summary returned after POST /imports/dpr-oee (no full dataset)."""
@@ -61,3 +63,86 @@ class ImportJobRowsPageResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class DataSourceResponse(BaseModel):
+    """Stored ingestion source metadata."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    code: str
+    name: str
+    source_type: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    freshness_sla_minutes: int | None = None
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+class DataSourceListResponse(BaseModel):
+    items: list[DataSourceResponse]
+    count: int
+
+
+class DataSourceCreateRequest(BaseModel):
+    code: str
+    name: str
+    source_type: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    freshness_sla_minutes: int | None = None
+    is_active: bool = True
+
+
+class ColumnMappingTemplateResponse(BaseModel):
+    """Saved field mapping between a source header and the target schema."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    source_type: str
+    department_id: UUID | None = None
+    mapping: dict[str, Any] = Field(default_factory=dict)
+    version: int = 1
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+class ColumnMappingTemplateListResponse(BaseModel):
+    items: list[ColumnMappingTemplateResponse]
+    count: int
+
+
+class ColumnMappingTemplateCreateRequest(BaseModel):
+    name: str
+    source_type: str
+    department_id: UUID | None = None
+    mapping: dict[str, Any] = Field(default_factory=dict)
+    version: int = 1
+    is_active: bool = True
+
+
+class ImportPreviewResponse(BaseModel):
+    source_type: str
+    headers: list[str]
+    rows: list[dict[str, Any]]
+    row_count: int
+    preview_limit: int = 25
+
+
+class ImportMappingValidationRequest(BaseModel):
+    source_type: str
+    headers: list[str]
+    mapping: dict[str, Any] = Field(default_factory=dict)
+
+
+class ImportMappingValidationResponse(BaseModel):
+    source_type: str
+    valid: bool
+    required_fields: list[str]
+    missing_fields: list[str]
+    mapped_fields: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)

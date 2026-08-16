@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
+from app.services.event_queue import clear_pending_events, emit_pending_events
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
@@ -46,12 +47,19 @@ def get_db() -> Generator[Session, None, None]:
 
     Route handlers and services must not nest commits that break this contract.
     Services (e.g. ``ingest_dpr_oee_workbook``) flush only — the API owns commit.
+
+    After successful commit, emits any pending SSE events queued during request.
+    On rollback, clears pending events (transaction-safe guarantee).
     """
     session = get_session_factory()()
     try:
         yield session
         session.commit()
+        # Emit SSE events only after commit succeeds (transaction-safe)
+        emit_pending_events(session)
     except Exception:
+        # Clear any queued events on rollback (don't emit for rolled-back changes)
+        clear_pending_events(session)
         session.rollback()
         raise
     finally:

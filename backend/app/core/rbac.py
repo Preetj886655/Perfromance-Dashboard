@@ -37,6 +37,7 @@ ROLE_PERMISSION_MATRIX: dict[str, set[tuple[str, str]]] = {
         ("imports", "READ"),
         ("imports", "CREATE"),
         ("masters", "READ"),
+        ("masters", "CREATE"),
         ("users", "MANAGE"),
         ("reports", "READ"),
         ("reports", "EXPORT"),
@@ -50,6 +51,7 @@ ROLE_PERMISSION_MATRIX: dict[str, set[tuple[str, str]]] = {
         ("imports", "READ"),
         ("imports", "CREATE"),
         ("masters", "READ"),
+        ("masters", "CREATE"),
         ("users", "MANAGE"),
         ("reports", "READ"),
         ("reports", "EXPORT"),
@@ -63,6 +65,7 @@ ROLE_PERMISSION_MATRIX: dict[str, set[tuple[str, str]]] = {
         ("imports", "READ"),
         ("imports", "CREATE"),
         ("masters", "READ"),
+        ("masters", "CREATE"),
         ("reports", "READ"),
     },
     "DEPT_HEAD": {
@@ -80,6 +83,7 @@ ROLE_PERMISSION_MATRIX: dict[str, set[tuple[str, str]]] = {
         ("imports", "READ"),
         ("imports", "CREATE"),
         ("masters", "READ"),
+        ("masters", "CREATE"),
         ("reports", "READ"),
     },
     "OPERATOR": {

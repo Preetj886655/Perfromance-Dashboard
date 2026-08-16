@@ -28,6 +28,7 @@ Q1/Q2/Q6/Q11/Q13/Q17. Does not invent downtime/rejection reasons.
 
 from __future__ import annotations
 
+import csv
 import io
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -187,6 +188,55 @@ def _open_workbook(file_path_or_bytes: str | Path | bytes | BinaryIO) -> Workboo
         return load_workbook(filename=io.BytesIO(file_path_or_bytes), data_only=False)
     # file-like
     return load_workbook(filename=file_path_or_bytes, data_only=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _CsvCellValue:
+    """Duck-types openpyxl's ``Cell`` far enough for ``_cell()`` (``.value`` only)."""
+
+    value: Any
+
+
+class _CsvSheet:
+    """Minimal stand-in for an openpyxl ``Worksheet``, backed by parsed CSV rows.
+
+    Implements only the surface the row-parsing/validation code actually uses:
+    ``.title``, ``.max_row``, ``.cell(row=, column=).value``. This lets
+    ``_cell()``, ``validate_dpr_oee_sheet()``, ``_parse_data_row()``, and the
+    row-loop in ``_run_ingestion_rows()`` run unmodified against a CSV export
+    of the same DPR_OEE template layout (3 header rows + data from row 5),
+    instead of an .xlsx workbook.
+
+    CSV has no sheet-name concept, so ``.title`` is fixed to ``SHEET_NAME`` —
+    there is nothing meaningful to validate there for CSV (unlike Excel, where
+    a wrong/renamed sheet is a real user error worth catching).
+    """
+
+    def __init__(self, rows: list[list[str]]) -> None:
+        self._rows = rows
+        self.title = SHEET_NAME
+        self.max_row = len(rows)
+
+    def cell(self, row: int, column: int) -> _CsvCellValue:
+        row_values = self._rows[row - 1] if 0 < row <= len(self._rows) else []
+        value: str | None = row_values[column - 1] if 0 < column <= len(row_values) else None
+        # Normalise CSV's "" to None so _to_date/_to_time/_to_decimal/_to_str
+        # treat a blank cell exactly like a blank Excel cell.
+        if value == "":
+            value = None
+        return _CsvCellValue(value)
+
+
+def _open_csv_sheet(content: bytes) -> _CsvSheet:
+    """Parse CSV bytes (RFC4180 quoting, CRLF or LF, UTF-8 with optional BOM).
+
+    Uses the stdlib ``csv`` module — correctly handles commas inside quoted
+    fields (e.g. a free-text Remarks cell) — not a naive ``line.split(",")``.
+    """
+    text = content.decode("utf-8-sig")
+    reader = csv.reader(io.StringIO(text))
+    rows = [list(raw_row) for raw_row in reader]
+    return _CsvSheet(rows)
 
 
 def _file_uri(file_path_or_bytes: str | Path | bytes | BinaryIO) -> str | None:
@@ -762,7 +812,15 @@ def _upsert_production_record(
     *,
     import_job: ImportJob,
     resolved: Mapping[str, Any],
+    source_type: str = "excel",
 ) -> ProductionRecord:
+    """Upsert keyed on ``external_row_key`` (business identity — plant/date/
+    shift/machine/part/start_at), not on source format. Re-importing the same
+    business row via a different format (e.g. CSV after Excel) intentionally
+    updates the same record and reassigns source_type/source_import_id —
+    same "last wins" duplicate policy already used for repeated Excel imports,
+    not a new one.
+    """
     key: str = resolved["external_row_key"]
     existing = session.scalar(
         select(ProductionRecord).where(ProductionRecord.external_row_key == key)
@@ -784,7 +842,7 @@ def _upsert_production_record(
             planned_downtime_min=resolved["planned_downtime_min"],
             remarks=resolved["remarks"],
             source_import_id=import_job.id,
-            source_type="excel",
+            source_type=source_type,
             external_row_key=key,
             status="draft",
         )
@@ -808,7 +866,7 @@ def _upsert_production_record(
         record.planned_downtime_min = resolved["planned_downtime_min"]
         record.remarks = resolved["remarks"]
         record.source_import_id = import_job.id
-        record.source_type = "excel"
+        record.source_type = source_type
         session.flush()
 
     return record
@@ -830,33 +888,22 @@ def _dpr_oee_mapping_config(plant_id: UUID) -> dict[str, Any]:
     }
 
 
-def ingest_dpr_oee_workbook(
+def _get_or_init_import_job(
     session: Session,
-    file_path_or_bytes: str | Path | bytes | BinaryIO,
     *,
-    plant_id: UUID,
-    uploaded_by: UUID | None = None,
-    import_job: ImportJob | None = None,
-) -> ImportJobResult:
-    """Ingest a DPR_OEE workbook into raw + metrics tables (no commit).
+    source_type: str,
+    resolved_uri: str | None,
+    uploaded_by: UUID | None,
+    mapping: dict[str, Any],
+    import_job: ImportJob | None,
+) -> ImportJob:
+    """Create a new ``import_jobs`` row, or reset+reuse one (worker/retry path).
 
-    ``plant_id`` is required (Q11: never hard-coded). Masters must already
-    exist; missing machine/shift/part/operator/reason → row validation errors.
-
-    When ``import_job`` is provided (worker / retry path), that row is reused
-    instead of inserting a new ``import_jobs`` record. Prior ``import_job_rows``
-    for the job are cleared so UNIQUE(job, row_number) stays valid.
+    Identical bookkeeping for both Excel and CSV — only ``source_type`` differs.
     """
-    plant = session.get(Plant, plant_id)
-    if plant is None:
-        raise ValueError(f"plant_id {plant_id} not found")
-
-    mapping = _dpr_oee_mapping_config(plant_id)
-    resolved_uri = _file_uri(file_path_or_bytes)
-
     if import_job is None:
         import_job = ImportJob(
-            source_type="excel",
+            source_type=source_type,
             file_uri=resolved_uri,
             uploaded_by=uploaded_by,
             status="validating",
@@ -864,71 +911,63 @@ def ingest_dpr_oee_workbook(
         )
         session.add(import_job)
         session.flush()
-    else:
-        # Reuse existing job (import worker / failed-job retry).
-        if resolved_uri is not None:
-            import_job.file_uri = resolved_uri
-        if uploaded_by is not None:
-            import_job.uploaded_by = uploaded_by
-        import_job.source_type = "excel"
-        import_job.status = "validating"
-        import_job.mapping_config = {**(import_job.mapping_config or {}), **mapping}
-        import_job.row_count = 0
-        import_job.success_count = 0
-        import_job.error_count = 0
-        import_job.error_summary = None
-        session.execute(
-            delete(ImportJobRow).where(ImportJobRow.import_job_id == import_job.id)
-        )
-        session.flush()
+        return import_job
 
-    try:
-        wb = _open_workbook(file_path_or_bytes)
-    except Exception as exc:  # noqa: BLE001 — surface as job failure
-        import_job.status = "failed"
-        import_job.error_summary = f"Failed to open workbook: {exc}"
-        session.flush()
-        return ImportJobResult(
-            import_job_id=import_job.id,
-            status=import_job.status,
-            row_count=0,
-            success_count=0,
-            error_count=0,
-            skipped_count=0,
-            error_summary=import_job.error_summary,
-        )
+    # Reuse existing job (import worker / failed-job retry).
+    if resolved_uri is not None:
+        import_job.file_uri = resolved_uri
+    if uploaded_by is not None:
+        import_job.uploaded_by = uploaded_by
+    import_job.source_type = source_type
+    import_job.status = "validating"
+    import_job.mapping_config = {**(import_job.mapping_config or {}), **mapping}
+    import_job.row_count = 0
+    import_job.success_count = 0
+    import_job.error_count = 0
+    import_job.error_summary = None
+    session.execute(
+        delete(ImportJobRow).where(ImportJobRow.import_job_id == import_job.id)
+    )
+    session.flush()
+    return import_job
 
-    if SHEET_NAME not in wb.sheetnames:
-        import_job.status = "failed"
-        import_job.error_summary = (
-            f"Sheet {SHEET_NAME!r} not found; sheets={wb.sheetnames!r}"
-        )
-        session.flush()
-        return ImportJobResult(
-            import_job_id=import_job.id,
-            status=import_job.status,
-            row_count=0,
-            success_count=0,
-            error_count=0,
-            skipped_count=0,
-            error_summary=import_job.error_summary,
-        )
 
-    ws = wb[SHEET_NAME]
+def _failed_result(import_job: ImportJob, message: str) -> ImportJobResult:
+    import_job.status = "failed"
+    import_job.error_summary = message
+    return ImportJobResult(
+        import_job_id=import_job.id,
+        status=import_job.status,
+        row_count=0,
+        success_count=0,
+        error_count=0,
+        skipped_count=0,
+        error_summary=import_job.error_summary,
+    )
+
+
+def _run_ingestion_rows(
+    session: Session,
+    ws: Any,
+    *,
+    plant: Plant,
+    plant_id: UUID,
+    import_job: ImportJob,
+    source_type: str,
+) -> ImportJobResult:
+    """Header validation + row loop + status/counts — shared by Excel and CSV.
+
+    Byte-identical to the pre-CSV single-function body except ``source_type``
+    is threaded into ``_upsert_production_record`` instead of hardcoded.
+    Operates only through ``_cell()``-compatible ``.cell(row=, column=).value``
+    and ``.max_row`` / ``.title``, so it runs unchanged against an openpyxl
+    ``Worksheet`` or a ``_CsvSheet``.
+    """
     header_errors = validate_dpr_oee_sheet(ws)
     if header_errors:
-        import_job.status = "failed"
-        import_job.error_summary = "; ".join(header_errors)
+        result = _failed_result(import_job, "; ".join(header_errors))
         session.flush()
-        return ImportJobResult(
-            import_job_id=import_job.id,
-            status=import_job.status,
-            row_count=0,
-            success_count=0,
-            error_count=0,
-            skipped_count=0,
-            error_summary=import_job.error_summary,
-        )
+        return result
 
     (
         machines,
@@ -988,7 +1027,10 @@ def ingest_dpr_oee_workbook(
         try:
             with session.begin_nested():
                 record = _upsert_production_record(
-                    session, import_job=import_job, resolved=resolved
+                    session,
+                    import_job=import_job,
+                    resolved=resolved,
+                    source_type=source_type,
                 )
                 dt_events, rj_events = _replace_child_events(
                     session,
@@ -1072,12 +1114,138 @@ def ingest_dpr_oee_workbook(
     )
 
 
+def ingest_dpr_oee_workbook(
+    session: Session,
+    file_path_or_bytes: str | Path | bytes | BinaryIO,
+    *,
+    plant_id: UUID,
+    uploaded_by: UUID | None = None,
+    import_job: ImportJob | None = None,
+) -> ImportJobResult:
+    """Ingest a DPR_OEE Excel workbook into raw + metrics tables (no commit).
+
+    ``plant_id`` is required (Q11: never hard-coded). Masters must already
+    exist; missing machine/shift/part/operator/reason → row validation errors.
+
+    When ``import_job`` is provided (worker / retry path), that row is reused
+    instead of inserting a new ``import_jobs`` record. Prior ``import_job_rows``
+    for the job are cleared so UNIQUE(job, row_number) stays valid.
+
+    Excel-specific: opens the workbook, requires a sheet literally named
+    ``DPR_OEE``. Row/validation/persistence logic lives in
+    ``_run_ingestion_rows`` (shared with ``ingest_dpr_oee_csv``).
+    """
+    plant = session.get(Plant, plant_id)
+    if plant is None:
+        raise ValueError(f"plant_id {plant_id} not found")
+
+    mapping = _dpr_oee_mapping_config(plant_id)
+    resolved_uri = _file_uri(file_path_or_bytes)
+    import_job = _get_or_init_import_job(
+        session,
+        source_type="excel",
+        resolved_uri=resolved_uri,
+        uploaded_by=uploaded_by,
+        mapping=mapping,
+        import_job=import_job,
+    )
+
+    try:
+        wb = _open_workbook(file_path_or_bytes)
+    except Exception as exc:  # noqa: BLE001 — surface as job failure
+        result = _failed_result(import_job, f"Failed to open workbook: {exc}")
+        session.flush()
+        return result
+
+    if SHEET_NAME not in wb.sheetnames:
+        result = _failed_result(
+            import_job, f"Sheet {SHEET_NAME!r} not found; sheets={wb.sheetnames!r}"
+        )
+        session.flush()
+        return result
+
+    ws = wb[SHEET_NAME]
+    return _run_ingestion_rows(
+        session, ws, plant=plant, plant_id=plant_id, import_job=import_job, source_type="excel"
+    )
+
+
+def ingest_dpr_oee_csv(
+    session: Session,
+    content: bytes,
+    *,
+    plant_id: UUID,
+    uploaded_by: UUID | None = None,
+    import_job: ImportJob | None = None,
+    file_uri: str | None = None,
+) -> ImportJobResult:
+    """Ingest a CSV export of the DPR_OEE template into raw + metrics tables.
+
+    CSV Import — Phase 1. Mirrors ``ingest_dpr_oee_workbook`` exactly except
+    for how the sheet is opened: this expects a CSV with the *same physical
+    layout* as the Excel template (2 title rows, headers on row 3, downtime/
+    rejection sub-headers on row 4, data from row 5 — i.e. "Save As CSV" from
+    the same workbook), not an arbitrary/generic CSV with one header row.
+    A flatter, arbitrarily-columned CSV needs the column-mapping-template
+    commit path, which is a later phase (Section 2/§"generalize mapping
+    layer" — explicitly out of scope here).
+
+    Same validation, same duplicate policy (external_row_key upsert, no
+    source_type in the key — see ``_upsert_production_record``), same
+    persistence path as Excel. Only ``ImportJob.source_type`` /
+    ``ProductionRecord.source_type`` differ: ``"csv"`` instead of ``"excel"``.
+    """
+    plant = session.get(Plant, plant_id)
+    if plant is None:
+        raise ValueError(f"plant_id {plant_id} not found")
+
+    mapping = _dpr_oee_mapping_config(plant_id)
+    import_job = _get_or_init_import_job(
+        session,
+        source_type="csv",
+        resolved_uri=file_uri,
+        uploaded_by=uploaded_by,
+        mapping=mapping,
+        import_job=import_job,
+    )
+
+    if not content:
+        result = _failed_result(import_job, "CSV file is empty")
+        session.flush()
+        return result
+
+    try:
+        ws = _open_csv_sheet(content)
+    except Exception as exc:  # noqa: BLE001 — surface as job failure
+        result = _failed_result(import_job, f"Failed to parse CSV: {exc}")
+        session.flush()
+        return result
+
+    if ws.max_row == 0:
+        result = _failed_result(import_job, "CSV file is empty")
+        session.flush()
+        return result
+    if ws.max_row < DATA_START_ROW:
+        result = _failed_result(
+            import_job,
+            "CSV has no data rows — expected the DPR_OEE template layout "
+            f"(headers on row {HEADER_ROW}, data from row {DATA_START_ROW})",
+        )
+        session.flush()
+        return result
+
+    return _run_ingestion_rows(
+        session, ws, plant=plant, plant_id=plant_id, import_job=import_job, source_type="csv"
+    )
+
+
 # Re-export helpers useful for unit tests.
 __all__ = [
     "DOWNTIME_COLUMNS",
     "ImportJobResult",
     "REJECTION_COLUMNS",
     "SHEET_NAME",
+    "ingest_dpr_oee_csv",
     "ingest_dpr_oee_workbook",
     "validate_dpr_oee_sheet",
 ]

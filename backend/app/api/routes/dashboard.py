@@ -6,10 +6,12 @@ at this grain (column absent on snapshots; AG not computed in API).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.schemas.dashboard import (
@@ -18,10 +20,12 @@ from app.api.schemas.dashboard import (
     OeeSnapshotResponse,
 )
 from app.core.rbac import require_permission
+from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.oee_snapshot import OeeSnapshot
 from app.services import dashboard_oee as svc
 from app.services.oee_rollup import AGGREGATION_RULE_VERSION
+from app.services.sse import register_sse_queue, unregister_sse_queue
 
 router = APIRouter(
     prefix="/api/v1/dashboard",
@@ -91,6 +95,81 @@ def _parse_period_type(value: str) -> str:
         return svc.validate_period_type(value)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=_safe_detail(str(exc))) from exc
+
+
+@router.get(
+    "/stream",
+    summary="Open SSE stream for dashboard updates",
+    description=(
+        "Server-Sent Events stream for real-time OEE dashboard updates. "
+        "Single-instance in-process only; requires valid JWT authentication."
+    ),
+)
+async def stream_dashboard_updates(
+    request: Request,
+    token: str | None = None,
+) -> StreamingResponse:
+    """Open SSE stream for authenticated clients (JWT required).
+
+    Returns 401 if token is missing or invalid.
+    Maintains heartbeat to keep connection alive.
+    Events are broadcast when OEE snapshots are updated (via import rollup).
+    """
+    auth_header = (request.headers.get("authorization") or "").strip()
+    token_value = token or request.query_params.get("token")
+    if auth_header.lower().startswith("bearer "):
+        token_value = auth_header.split(" ", 1)[1].strip() or token_value
+
+    if not token_value:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+
+    try:
+        decode_access_token(token_value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        ) from exc
+
+    # Register queue and get its key for later cleanup
+    queue_key, queue = register_sse_queue()
+
+    async def event_generator():
+        try:
+            heartbeat_count = 0
+            while True:
+                if queue:
+                    try:
+                        message = queue.popleft()
+                    except IndexError:
+                        message = None
+                    if message is not None:
+                        yield message
+                        heartbeat_count = 0
+                        continue
+
+                # Send heartbeat comment every 30 iterations (~7.5s at 0.25s sleep)
+                heartbeat_count += 1
+                if heartbeat_count >= 30:
+                    yield ": heartbeat\n\n"
+                    heartbeat_count = 0
+
+                await asyncio.sleep(0.25)
+        finally:
+            unregister_sse_queue(queue_key)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get(

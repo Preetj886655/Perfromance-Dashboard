@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db, get_engine
 from app.main import app
+from app.models.column_mapping_template import ColumnMappingTemplate
+from app.models.data_source import DataSource
 from app.models.department import Department
 from app.models.line import Line
 from app.models.machine import Machine
@@ -218,3 +220,91 @@ def test_master_data_endpoint_404_for_unknown_plant_or_line(client: TestClient, 
     assert client.get("/api/v1/plants").status_code == 200
     assert client.get("/api/v1/lines", params={"plant_id": str(uuid.uuid4())}).status_code == 404
     assert client.get("/api/v1/machines", params={"line_id": str(uuid.uuid4())}).status_code == 404
+
+
+def test_data_source_and_mapping_template_crud(client: TestClient, db_session: Session) -> None:
+    payload = {
+        "code": "google-form-pril",
+        "name": "PRIL Google Form",
+        "source_type": "form",
+        "config": {
+            "form_url": "https://forms.gle/xS36oXENxxzvj6927",
+            "sheet_name": "Form Responses 1",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/abc123",
+        },
+        "freshness_sla_minutes": 15,
+        "is_active": True,
+    }
+
+    create_source = client.post("/api/v1/data-sources", json=payload)
+    assert create_source.status_code == 201, create_source.text
+    body = create_source.json()
+    assert body["code"] == "google-form-pril"
+    assert body["config"]["form_url"] == payload["config"]["form_url"]
+
+    list_sources = client.get("/api/v1/data-sources")
+    assert list_sources.status_code == 200, list_sources.text
+    assert any(item["code"] == "google-form-pril" for item in list_sources.json()["items"])
+
+    mapping_payload = {
+        "name": "pril-production-form-v1",
+        "source_type": "form",
+        "department_id": None,
+        "mapping": {
+            "plant_code": "Plant",
+            "line_code": "Line",
+            "machine_code": "Machine",
+            "part_code": "Part",
+            "production_date": "Date",
+            "shift_code": "Shift",
+            "start_at": "Start Time",
+            "stop_at": "End Time",
+            "produced_qty": "Produced Qty",
+        },
+        "version": 1,
+        "is_active": True,
+    }
+
+    create_map = client.post("/api/v1/column-mapping-templates", json=mapping_payload)
+    assert create_map.status_code == 201, create_map.text
+    assert create_map.json()["mapping"]["plant_code"] == "Plant"
+
+    list_maps = client.get("/api/v1/column-mapping-templates")
+    assert list_maps.status_code == 200, list_maps.text
+    assert any(item["name"] == "pril-production-form-v1" for item in list_maps.json()["items"])
+
+
+def test_import_preview_csv_headers(client: TestClient, db_session: Session) -> None:
+    csv_payload = "Plant,Line,Machine,Part,Date,Shift,Produced Qty\nPL1,LINE-A,M-001,PT1,2025-01-10,S1,120\n"
+    response = client.post(
+        "/api/v1/imports/preview",
+        files={"file": ("sample.csv", csv_payload, "text/csv")},
+        data={"source_type": "csv"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["source_type"] == "csv"
+    assert body["headers"] == ["Plant", "Line", "Machine", "Part", "Date", "Shift", "Produced Qty"]
+    assert len(body["rows"]) == 1
+    assert body["row_count"] == 1
+
+
+def test_import_preview_csv_handles_quoted_comma(client: TestClient, db_session: Session) -> None:
+    """A naive line.split(',') parser would corrupt this row (Remarks has an
+    embedded comma inside quotes) — the preview endpoint must not.
+    """
+    csv_payload = (
+        'Plant,Line,Machine,Remarks\n'
+        'PL1,LINE-A,M-001,"Line stopped, restarted after 5 min"\n'
+    )
+    response = client.post(
+        "/api/v1/imports/preview",
+        files={"file": ("sample.csv", csv_payload, "text/csv")},
+        data={"source_type": "csv"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["headers"] == ["Plant", "Line", "Machine", "Remarks"]
+    assert body["row_count"] == 1
+    assert body["rows"][0]["Remarks"] == "Line stopped, restarted after 5 min"
+    assert body["rows"][0]["Machine"] == "M-001"
