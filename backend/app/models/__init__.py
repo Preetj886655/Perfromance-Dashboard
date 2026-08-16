@@ -9,8 +9,12 @@ from app.models.column_mapping_template import ColumnMappingTemplate
 from app.models.custom_field_definition import CustomFieldDefinition
 from app.models.customer import Customer
 from app.models.customer_complaint import CustomerComplaint
+from app.models.column_mapping import ColumnMapping
 from app.models.data_source import DataSource
 from app.models.department import Department
+from app.models.field_configuration import FieldConfiguration
+from app.models.google_form_config import GoogleFormConfig
+from app.models.google_sheet_config import GoogleSheetConfig
 from app.models.dispatch_record import DispatchRecord
 from app.models.downtime_event import DowntimeEvent
 from app.models.downtime_reason import DowntimeReason
@@ -43,6 +47,7 @@ from app.models.role import Role
 from app.models.role_permission import RolePermission
 from app.models.shift import Shift
 from app.models.shift_calendar import ShiftCalendar
+from app.models.sync_log import SyncLog
 from app.models.user import User
 from app.models.user_role import UserRole
 
@@ -56,8 +61,12 @@ __all__ = [
     "CustomFieldDefinition",
     "Customer",
     "CustomerComplaint",
+    "ColumnMapping",
     "DataSource",
     "Department",
+    "FieldConfiguration",
+    "GoogleFormConfig",
+    "GoogleSheetConfig",
     "DispatchRecord",
     "DowntimeEvent",
     "DowntimeReason",
@@ -90,6 +99,7 @@ __all__ = [
     "RolePermission",
     "Shift",
     "ShiftCalendar",
+    "SyncLog",
     "User",
     "UserRole",
 ]
