@@ -18,10 +18,12 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -88,6 +90,38 @@ class ProductionRecord(Base):
             "ix_production_records_part_id_production_date",
             "part_id",
             "production_date",
+        ),
+        Index(
+            "ix_production_records_data_source",
+            "data_source",
+        ),
+        Index(
+            "ix_production_records_source_identifier",
+            "source_identifier",
+        ),
+        Index(
+            "ix_production_records_imported_at",
+            "imported_at",
+        ),
+        Index(
+            "ix_production_records_is_duplicate",
+            "is_duplicate",
+        ),
+        Index(
+            "ix_production_records_source_trace",
+            "data_source",
+            "source_identifier",
+            "original_row_number",
+        ),
+        Index(
+            "uq_production_records_data_source_source_identifier_row",
+            "data_source",
+            "source_identifier",
+            "original_row_number",
+            unique=True,
+            postgresql_where=text(
+                "is_duplicate IS FALSE AND source_identifier IS NOT NULL AND original_row_number IS NOT NULL"
+            ),
         ),
     )
 
@@ -165,6 +199,19 @@ class ProductionRecord(Base):
     )
     # VARCHAR classifier (not PG ENUM) — e.g. excel, csv, form, sheets, manual, api.
     source_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # External-source lineage for traceability during imports and syncs.
+    data_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    imported_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    original_row_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_duplicate: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
     external_row_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Soft approval: draft → submitted → approved (VARCHAR, not PG ENUM).
     status: Mapped[str] = mapped_column(

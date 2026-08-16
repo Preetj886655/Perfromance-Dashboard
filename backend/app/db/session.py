@@ -6,15 +6,70 @@ Session factory is available for Stage B ORM usage without changing health behav
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
+from app.models.rejection_reason import RejectionReason
 from app.services.event_queue import clear_pending_events, emit_pending_events
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
+_REFERENCE_SEEDS_INITIALIZED = False
+
+
+def _seed_reference_catalogs() -> None:
+    """Ensure the canonical DPR/OEE reason catalogs exist in the database.
+
+    These lookup tables are part of the base data model and are required by the
+    ingestion workflow. Seeding them lazily here keeps the application and test
+    database consistent without altering the existing Excel import logic.
+    """
+    global _REFERENCE_SEEDS_INITIALIZED
+    if _REFERENCE_SEEDS_INITIALIZED:
+        return
+
+    engine = get_engine()
+    inspector = inspect(engine)
+    if not inspector.has_table("rejection_reasons"):
+        _REFERENCE_SEEDS_INITIALIZED = True
+        return
+
+    session = get_session_factory()()
+    try:
+        rejection_rows = [
+            ("A", "Short Moulding", 1, "AH"),
+            ("B", "Shrinkage Mark", 2, "AI"),
+            ("C", "Silver Streak", 3, "AJ"),
+            ("D", "Flow Mark", 4, "AK"),
+            ("E", "Weld Line", 5, "AL"),
+            ("F", "Dent Mark", 6, "AM"),
+            ("G", "Power Cut", 7, "AN"),
+            ("H", "Black Marks", 8, "AO"),
+            ("I", "Crack Marks", 9, "AP"),
+            ("J", "Others", 10, "AQ"),
+        ]
+        for code, label, sort_order, excel_column in rejection_rows:
+            row = session.scalar(select(RejectionReason).where(RejectionReason.code == code))
+            if row is None:
+                session.add(
+                    RejectionReason(
+                        code=code,
+                        label=label,
+                        is_active=True,
+                        sort_order=sort_order,
+                        excel_column=excel_column,
+                    )
+                )
+
+        session.commit()
+        _REFERENCE_SEEDS_INITIALIZED = True
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def get_engine() -> Engine:
@@ -26,6 +81,7 @@ def get_engine() -> Engine:
             pool_pre_ping=True,
             connect_args={"connect_timeout": 3},
         )
+        _seed_reference_catalogs()
     return _engine
 
 
