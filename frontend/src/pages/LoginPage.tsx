@@ -40,7 +40,7 @@ export function LoginPage({ onSubmit }: LoginPageProps) {
         <div className="auth-brand">
 <img
   className="auth-brand__logo"
-  src="/public/patil-logo.png"
+  src="/patil-logo.png"
   alt="Patil Group logo"
 />       
    <div className="auth-brand__text">
