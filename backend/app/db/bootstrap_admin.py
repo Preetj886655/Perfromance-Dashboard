@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import getpass
 import os
+import secrets
 import sys
 from collections.abc import Sequence
 
@@ -15,10 +15,6 @@ from app.models.role import Role
 from app.models.user import User
 from app.models.user_role import UserRole
 
-LOCAL_BOOTSTRAP_WARNING = (
-    "WARNING: This local bootstrap is for LOCAL DEVELOPMENT ONLY and creates the initial SUPER_ADMIN account."
-)
-
 
 def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
@@ -28,25 +24,23 @@ def _normalize_employee_code(employee_code: str) -> str:
     return (employee_code or "").strip()
 
 
-def _read_value(prompt: str, *, env_var: str | None = None, hidden: bool = False) -> str:
-    value = os.getenv(env_var) if env_var else None
-    if value is not None and value != "":
-        return value
-    if hidden:
-        return getpass.getpass(prompt)
-    return input(prompt)
+def _read_required(env_var: str) -> str:
+    value = (os.getenv(env_var) or "").strip()
+    if not value:
+        raise ValueError(f"{env_var} is required.")
+    return value
 
 
-def ensure_local_super_admin(
+def ensure_super_admin(
     db: Session,
     *,
     email: str,
     employee_code: str,
     password: str,
 ) -> bool:
-    """Ensure exactly one local SUPER_ADMIN exists for development use.
+    """Ensure exactly one SUPER_ADMIN exists; create it only when none exists.
 
-    Returns True when a new SUPER_ADMIN was created, False when one already exists.
+    Returns True when a new SUPER_ADMIN was created and False when one already exists.
     """
     normalized_email = _normalize_email(email)
     normalized_employee_code = _normalize_employee_code(employee_code)
@@ -55,7 +49,7 @@ def ensure_local_super_admin(
         raise ValueError("Email is required.")
     if not normalized_employee_code:
         raise ValueError("Employee code is required.")
-    if len((password or "").strip()) < 8:
+    if len(password) < 8:
         raise ValueError("Password must be at least 8 characters long.")
 
     seed_role_catalog(db)
@@ -96,16 +90,14 @@ def ensure_local_super_admin(
 
 def main(argv: Sequence[str] | None = None) -> int:
     _ = argv
-    print(LOCAL_BOOTSTRAP_WARNING)
-
-    email = _read_value("Email: ", env_var="APP_BOOTSTRAP_EMAIL")
-    employee_code = _read_value("Employee Code: ", env_var="APP_BOOTSTRAP_EMPLOYEE_CODE")
-    password = _read_value("Password: ", env_var="APP_BOOTSTRAP_PASSWORD", hidden=True)
+    email = _read_required("APP_BOOTSTRAP_EMAIL")
+    employee_code = _read_required("APP_BOOTSTRAP_EMPLOYEE_CODE")
+    password = os.getenv("APP_BOOTSTRAP_PASSWORD") or secrets.token_urlsafe(16)
 
     try:
         session_factory = get_session_factory()
         with session_factory() as db:
-            created = ensure_local_super_admin(
+            created = ensure_super_admin(
                 db,
                 email=email,
                 employee_code=employee_code,
@@ -113,7 +105,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if created:
                 db.commit()
-                print("Local SUPER_ADMIN created successfully.")
+                print("SUPER_ADMIN created successfully.")
+                # Do not print the password or other secrets.
                 return 0
 
             db.rollback()
