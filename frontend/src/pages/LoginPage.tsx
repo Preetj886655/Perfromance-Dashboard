@@ -9,6 +9,7 @@ type LoginPageProps = {
 export function LoginPage({ onSubmit }: LoginPageProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,16 +36,26 @@ export function LoginPage({ onSubmit }: LoginPageProps) {
 
   return (
     <div className="auth-shell">
-      <div className="auth-card">
+      <div className="auth-card" role="presentation">
         <div className="auth-brand">
-          <span className="auth-brand__eyebrow">Patil Manufacturing Analytics</span>
-          <h1>Sign in</h1>
+<img
+  className="auth-brand__logo"
+  src="/public/patil-logo.png"
+  alt="Patil Group logo"
+/>       
+   <div className="auth-brand__text">
+            <span className="auth-brand__eyebrow">PATIL GROUP</span>
+            <span className="auth-brand__name">PATIL MANUFACTURING ANALYTICS</span>
+          </div>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label className="field">
+        <h1 className="auth-title">Sign in</h1>
+
+        <form className="auth-form" onSubmit={handleSubmit} noValidate>
+          <label className="auth-field">
             <span className="field__label">Email or employee code</span>
             <input
+              className="auth-input"
               type="text"
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
@@ -54,16 +65,27 @@ export function LoginPage({ onSubmit }: LoginPageProps) {
             />
           </label>
 
-          <label className="field">
+          <label className="auth-field auth-field--password">
             <span className="field__label">Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              placeholder="Enter password"
-              required
-            />
+            <div className="auth-password-wrap">
+              <input
+                className="auth-input auth-input--password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                placeholder="Enter password"
+                required
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                onClick={() => setShowPassword((current) => !current)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </label>
 
           {error ? <p className="auth-error">{error}</p> : null}

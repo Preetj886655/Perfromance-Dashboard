@@ -181,6 +181,94 @@ def _norm_header(value: Any) -> str:
     return " ".join(str(value).strip().split())
 
 
+def _sheet_field_map(ws: Worksheet) -> dict[str, str]:
+    """Map canonical logical fields to the actual Excel column letters.
+
+    The repo includes two valid DPR_OEE layouts: the legacy synthetic workbook
+    used by the unit tests and the real plant workbook currently shipped in the
+    project. Both represent the same logical fields; only the physical column
+    positions differ.
+    """
+    c3 = _norm_header(_cell(ws, HEADER_ROW, "C")).lower()
+    d3 = _norm_header(_cell(ws, HEADER_ROW, "D")).lower()
+
+    if c3 == "production hour" and d3 == "shift":
+        return {
+            "B": "B",
+            "C": "D",
+            "D": "G",
+            "E": "H",
+            "F": "I",
+            "H": "L",
+            "I": "M",
+            "J": "N",
+            "K": "O",
+            "L": "P",
+            "N": "R",
+            "O": "S",
+            "AV": "AV",
+        }
+
+    return {
+        "B": "B",
+        "C": "C",
+        "D": "D",
+        "E": "E",
+        "F": "F",
+        "H": "H",
+        "I": "I",
+        "J": "J",
+        "K": "K",
+        "L": "L",
+        "N": "N",
+        "O": "O",
+        "AV": "AV",
+    }
+
+
+def _sheet_downtime_map(ws: Worksheet) -> dict[str, str]:
+    c3 = _norm_header(_cell(ws, HEADER_ROW, "C")).lower()
+    d3 = _norm_header(_cell(ws, HEADER_ROW, "D")).lower()
+    if c3 == "production hour" and d3 == "shift":
+        return {
+            "Q": "U",
+            "R": "V",
+            "S": "W",
+            "T": "X",
+            "U": "Y",
+            "V": "Z",
+            "W": "AA",
+            "X": "AB",
+            "Y": "AC",
+            "Z": "AD",
+            "AA": "AE",
+        }
+    return {letter: letter for letter, _, _ in DOWNTIME_COLUMNS}
+
+
+def _sheet_rejection_map(ws: Worksheet) -> dict[str, str]:
+    c3 = _norm_header(_cell(ws, HEADER_ROW, "C")).lower()
+    d3 = _norm_header(_cell(ws, HEADER_ROW, "D")).lower()
+    if c3 == "production hour" and d3 == "shift":
+        return {
+            "AH": "AL",
+            "AI": "AM",
+            "AJ": "AN",
+            "AK": "AO",
+            "AL": "AP",
+            "AM": "AQ",
+            "AN": "AR",
+            "AO": "AS",
+            "AP": "AT",
+            "AQ": "AU",
+        }
+    return {letter: letter for letter, _ in REJECTION_COLUMNS}
+
+
+def _actual_cell(ws: Worksheet, row_number: int, canonical_letter: str) -> Any:
+    return _cell(ws, row_number, _sheet_field_map(ws).get(canonical_letter, canonical_letter))
+
+
 def _open_workbook(file_path_or_bytes: str | Path | bytes | BinaryIO) -> Workbook:
     if isinstance(file_path_or_bytes, str | Path):
         return load_workbook(filename=str(file_path_or_bytes), data_only=False)
@@ -356,8 +444,10 @@ def validate_dpr_oee_sheet(ws: Worksheet) -> list[str]:
         errors.append(f"Expected sheet name {SHEET_NAME!r}, got {ws.title!r}")
         return errors
 
+    field_map = _sheet_field_map(ws)
     for letter, expected in _EXPECTED_ROW3.items():
-        actual = _norm_header(_cell(ws, HEADER_ROW, letter))
+        actual_letter = field_map.get(letter, letter)
+        actual = _norm_header(_cell(ws, HEADER_ROW, actual_letter))
         expected_n = _norm_header(expected)
         # Part Name header in Excel has trailing space — compare loosely.
         if expected_n.lower() not in actual.lower() and actual.lower() not in expected_n.lower():
@@ -366,12 +456,14 @@ def validate_dpr_oee_sheet(ws: Worksheet) -> list[str]:
             )
 
     for letter, _code, _label in DOWNTIME_COLUMNS:
-        actual = _norm_header(_cell(ws, SUBHEADER_ROW, letter))
+        actual_letter = _sheet_downtime_map(ws).get(letter, letter)
+        actual = _norm_header(_cell(ws, SUBHEADER_ROW, actual_letter))
         if not actual:
             errors.append(f"Missing downtime sub-header at {letter}{SUBHEADER_ROW}")
 
     for letter, _code in REJECTION_COLUMNS:
-        actual = _norm_header(_cell(ws, SUBHEADER_ROW, letter))
+        actual_letter = _sheet_rejection_map(ws).get(letter, letter)
+        actual = _norm_header(_cell(ws, SUBHEADER_ROW, actual_letter))
         if not actual:
             errors.append(f"Missing rejection sub-header at {letter}{SUBHEADER_ROW}")
 
@@ -402,6 +494,7 @@ def _is_empty_business_row(parsed: _ParsedRow) -> bool:
 
 
 def _parse_data_row(ws: Worksheet, row_number: int) -> _ParsedRow:
+    field_map = _sheet_field_map(ws)
     payload: dict[str, Any] = {"excel_row": row_number}
     for letter in (
         COL_DATE,
@@ -418,19 +511,21 @@ def _parse_data_row(ws: Worksheet, row_number: int) -> _ParsedRow:
         COL_PLANNED_DT,
         COL_REMARKS,
     ):
-        payload[letter] = _jsonable(_cell(ws, row_number, letter))
+        actual_letter = field_map.get(letter, letter)
+        payload[letter] = _jsonable(_cell(ws, row_number, actual_letter))
 
     downtime: dict[str, Decimal] = {}
     for letter, _code, _label in DOWNTIME_COLUMNS:
-        raw = _cell(ws, row_number, letter)
+        actual_letter = _sheet_downtime_map(ws).get(letter, letter)
+        raw = _cell(ws, row_number, actual_letter)
         payload[letter] = _jsonable(raw)
-        # Blank → 0 for SUM semantics; events skipped later when zero.
         minutes = _to_decimal(raw)
         downtime[letter] = _ZERO if minutes is None else minutes
 
     rejection: dict[str, Decimal] = {}
     for letter, _code in REJECTION_COLUMNS:
-        raw = _cell(ws, row_number, letter)
+        actual_letter = _sheet_rejection_map(ws).get(letter, letter)
+        raw = _cell(ws, row_number, actual_letter)
         payload[letter] = _jsonable(raw)
         qty = _to_decimal(raw)
         rejection[letter] = _ZERO if qty is None else qty
@@ -438,19 +533,19 @@ def _parse_data_row(ws: Worksheet, row_number: int) -> _ParsedRow:
     return _ParsedRow(
         excel_row=row_number,
         payload=payload,
-        production_date=_to_date(_cell(ws, row_number, COL_DATE)),
-        shift_code=_to_str(_cell(ws, row_number, COL_SHIFT)),
-        machine_code=_to_str(_cell(ws, row_number, COL_MACHINE)),
-        operator_raw=_to_str(_cell(ws, row_number, COL_OPERATOR)),
-        part_code=_to_str(_cell(ws, row_number, COL_PART_NO)),
-        part_name=_to_str(_cell(ws, row_number, COL_PART_NAME)),
-        start_time=_to_time(_cell(ws, row_number, COL_START)),
-        stop_time=_to_time(_cell(ws, row_number, COL_STOP)),
-        cavity_count=_to_decimal(_cell(ws, row_number, COL_CAVITY)),
-        cycle_time_sec=_to_decimal(_cell(ws, row_number, COL_CYCLE)),
-        produced_qty=_to_decimal(_cell(ws, row_number, COL_PRODUCED)),
-        planned_downtime_min=_to_decimal(_cell(ws, row_number, COL_PLANNED_DT)),
-        remarks=_to_str(_cell(ws, row_number, COL_REMARKS)),
+        production_date=_to_date(_actual_cell(ws, row_number, COL_DATE)),
+        shift_code=_to_str(_actual_cell(ws, row_number, COL_SHIFT)),
+        machine_code=_to_str(_actual_cell(ws, row_number, COL_MACHINE)),
+        operator_raw=_to_str(_actual_cell(ws, row_number, COL_OPERATOR)),
+        part_code=_to_str(_actual_cell(ws, row_number, COL_PART_NO)),
+        part_name=_to_str(_actual_cell(ws, row_number, COL_PART_NAME)),
+        start_time=_to_time(_actual_cell(ws, row_number, COL_START)),
+        stop_time=_to_time(_actual_cell(ws, row_number, COL_STOP)),
+        cavity_count=_to_decimal(_actual_cell(ws, row_number, COL_CAVITY)),
+        cycle_time_sec=_to_decimal(_actual_cell(ws, row_number, COL_CYCLE)),
+        produced_qty=_to_decimal(_actual_cell(ws, row_number, COL_PRODUCED)),
+        planned_downtime_min=_to_decimal(_actual_cell(ws, row_number, COL_PLANNED_DT)),
+        remarks=_to_str(_actual_cell(ws, row_number, COL_REMARKS)),
         downtime_minutes=downtime,
         rejection_qtys=rejection,
     )

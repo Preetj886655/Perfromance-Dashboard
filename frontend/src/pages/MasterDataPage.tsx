@@ -488,7 +488,10 @@ function IngestionConfigPanel({
 
   return (
     <form onSubmit={handleSubmit} className="panel form-section">
-      <h3>Google Form / Sheet Source</h3>
+      <div>
+        <h3>Google Form / Sheet Source</h3>
+        <p className="section-copy">Connect a production data collection source.</p>
+      </div>
       <div className="form-grid">
         <label className="field">
           <span className="field__label">Source Code</span>
@@ -861,9 +864,17 @@ export function MasterDataPage() {
   return (
     <div className="shell shell--wide">
       <div className="page-header">
-        <h1>Master Data</h1>
-        <p>Manage plants, lines, machines, types, and statuses.</p>
+        <div>
+          <p className="eyebrow">Operations data</p>
+          <h1>Master Data</h1>
+        </div>
+        <div className="page-header__actions">
+          <button type="button" className="btn btn--ghost">Import</button>
+          <button type="button" className="btn btn--ghost">Export</button>
+          <button type="button" className="btn btn--primary">Add New</button>
+        </div>
       </div>
+      <p className="page-header__subtitle">Manage plants, lines, machines, types, statuses and production configuration.</p>
 
       {error && (
         <div className="panel panel--error">
@@ -881,6 +892,7 @@ export function MasterDataPage() {
       <div className="master-data-grid">
         <section className="master-data-section">
           <h2>Production Ingestion</h2>
+          <p className="section-copy">Connect production data sources and configure how manufacturing data enters the analytics platform.</p>
           <IngestionConfigPanel onSaved={async () => { await refreshDataSources(); }} />
           <MappingTemplatePanel onSaved={async () => { await refreshMappings(); }} />
           <PreviewPanel plants={plants} />

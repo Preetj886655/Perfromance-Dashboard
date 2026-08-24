@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { AuthProvider } from "./auth/AuthContext";
 import { useAuth } from "./auth/useAuth";
 import { LoginPage } from "./pages/LoginPage";
-import { OeeDashboard } from "./pages/OeeDashboard";
 import { UserManagementPage } from "./pages/UserManagementPage";
 import { MasterDataPage } from "./pages/MasterDataPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { CreateAccountPage } from "./pages/CreateAccountPage";
+import { ManufacturingDashboard } from "./pages/ManufacturingDashboard";
 import "./App.css";
 
 type ViewKey = "dashboard" | "users" | "masters";
@@ -154,7 +154,7 @@ function AppView() {
           </div>
         )
       ) : (
-        <OeeDashboard />
+        <ManufacturingDashboard />
       )}
     </div>
   );

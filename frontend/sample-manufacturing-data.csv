@@ -1,0 +1,7 @@
+Date,Line,Shift,Machine,Part,ProductionTarget,TotalProduction,Rejection,DowntimeMinutes,DowntimeType,Department
+2026-08-01,Line 1,A,M-01,Axle,1000,980,10,35,Tool wear,Production
+2026-08-02,Line 1,A,M-01,Axle,1000,1025,12,20,Material shortage,Production
+2026-08-02,Line 2,B,M-04,Gear,900,860,18,70,Machine breakdown,Maintenance
+2026-08-03,Line 2,B,M-04,Gear,920,905,15,45,Tool wear,Maintenance
+2026-08-03,Line 3,C,M-06,Bearing,850,820,8,30,Idle,Quality
+2026-08-04,Line 3,C,M-06,Bearing,860,845,9,25,Setup,Quality
