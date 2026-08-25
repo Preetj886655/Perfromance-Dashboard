@@ -17,6 +17,7 @@ export function calculateProductionKpis(records: DprRecord[]): ProductionKpis {
   // Deterministic target aggregation:
   // target/hr multiplied by production hours from each row (falls back to available time in hours).
   const totalTargetProduction = records.reduce((sumValue, row) => {
+    if (isFiniteNumber(row.targetProduction)) return sumValue + row.targetProduction;
     if (!isFiniteNumber(row.targetQtyPerHour)) return sumValue;
     const hourFactor = isFiniteNumber(row.productionHour)
       ? row.productionHour

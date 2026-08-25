@@ -29,6 +29,14 @@ export type ParsedDprWorkbook = {
   records: DprRecord[];
   validationIssues: DprValidationIssue[];
   dashboardReference: WorkbookDashboardReference;
+  availableFields: string[];
+  analysisMode: "oee" | "manufacturing" | "production-downtime" | "production-quality" | "downtime" | "overview";
+  dataQuality: {
+    missingPercent: number;
+    duplicateRows: number;
+    sheetNames: string[];
+    recommendedSheetName: string;
+  };
 };
 
 const HEADER_CANDIDATES = [
@@ -40,9 +48,43 @@ const HEADER_CANDIDATES = [
   "machineno",
   "actualproductionqty",
   "oee",
+  "line",
+  "part",
+  "downtime",
+  "production",
+  "target",
+  "rejection",
 ];
 
-export async function parseDprWorkbookFile(file: File): Promise<ParsedDprWorkbook> {
+const FIELD_ALIASES: Record<string, string[]> = {
+  Date: ["date", "production date", "date of production", "timestamp"],
+  Line: ["line", "production line", "line name"],
+  Shift: ["shift", "shift name"],
+  "Machine Name": ["machine", "machine name", "machine no", "machine number"],
+  "Part Name": ["part", "part no", "part number", "product"],
+  "Downtime Reason": ["downtime type", "downtime reason", "reason", "breakdown reason"],
+  "Total Idle Time (Minutes)": ["downtime", "downtime minutes", "downtime mints", "breakdown minutes"],
+  "Actual Production Qty.": ["total production", "total prod nos", "production", "actual production", "actual production qty", "produced qty"],
+  "Production Target": ["production target", "prod target nos", "target"],
+  "Production Loss": ["production loss", "prod loss nos", "loss qty"],
+  "Total Rejection (Pcs Qty.)": ["rejection", "rejected qty", "rejection qty"],
+  "Any Other Remarks": ["description", "remarks", "comments"],
+  "Availability Ratio (A)": ["availability", "availability ratio", "operating time", "run time"],
+  "Operator Efficiency (Performance Ratio) - (P)": ["performance", "performance ratio"],
+  "Quantity Ratio (Q)": ["quality", "quality rate", "quality ratio"],
+  "OEE (A*P*Q)": ["oee", "oee percentage", "oee %"],
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  Date: "Date", Line: "Line", Shift: "Shift", "Machine Name": "Machine", "Part Name": "Part",
+  "Downtime Reason": "Downtime Reason", "Total Idle Time (Minutes)": "Downtime", "Actual Production Qty.": "Production",
+  "Production Target": "Production Target", "Production Loss": "Production Loss", "Total Rejection (Pcs Qty.)": "Rejection",
+  "Any Other Remarks": "Description",
+  "Availability Ratio (A)": "Availability", "Operator Efficiency (Performance Ratio) - (P)": "Performance",
+  "Quantity Ratio (Q)": "Quality", "OEE (A*P*Q)": "OEE",
+};
+
+export async function parseDprWorkbookFile(file: File, requestedSheetName?: string): Promise<ParsedDprWorkbook> {
   const extension = file.name.toLowerCase();
   const sourceType = extension.endsWith(".csv") ? "csv" : "excel";
 
@@ -65,24 +107,27 @@ export async function parseDprWorkbookFile(file: File): Promise<ParsedDprWorkboo
 
   const bytes = await file.arrayBuffer();
   const workbook = XLSX.read(bytes, { type: "array", raw: true, cellDates: false });
-  const dprSheet = workbook.Sheets["DPR_OEE"];
-  if (!dprSheet) {
-    throw new Error("DPR_OEE sheet not found in workbook.");
-  }
+  const recommendedSheetName = selectAnalysisSheet(workbook);
+  const sheetName = requestedSheetName && workbook.Sheets[requestedSheetName]
+    ? requestedSheetName
+    : recommendedSheetName;
+  const dataSheet = workbook.Sheets[sheetName];
 
   const dashboardSheetRows = workbook.Sheets["Dashboard"]
     ? XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets["Dashboard"], { header: 1, raw: true, defval: "" })
     : [];
 
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(dprSheet, { header: 1, raw: true, defval: "" });
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(dataSheet, { header: 1, raw: true, defval: "" });
 
   return buildParsedResult({
     fileName: file.name,
     fileSize: file.size,
     sourceType,
-    sheetName: "DPR_OEE",
+    sheetName,
     rows,
     dashboardSheetRows,
+    sheetNames: workbook.SheetNames,
+    recommendedSheetName,
   });
 }
 
@@ -93,12 +138,14 @@ function buildParsedResult(args: {
   sheetName: string;
   rows: unknown[][];
   dashboardSheetRows: unknown[][];
+  sheetNames?: string[];
+  recommendedSheetName?: string;
 }): ParsedDprWorkbook {
-  const { fileName, fileSize, sourceType, sheetName, rows, dashboardSheetRows } = args;
+  const { fileName, fileSize, sourceType, sheetName, rows, dashboardSheetRows, sheetNames = [sheetName], recommendedSheetName = sheetName } = args;
 
   const headerRowIndex = detectHeaderRowIndex(rows);
   if (headerRowIndex === -1) {
-    throw new Error("Date column could not be detected. Header row detection failed.");
+    throw new Error("No analyzable manufacturing data was found.");
   }
 
   const headerRow = rows[headerRowIndex] ?? [];
@@ -106,14 +153,15 @@ function buildParsedResult(args: {
   const hasSubHeader = detectSubHeader(subHeaderRow);
   const dataStartIndex = headerRowIndex + (hasSubHeader ? 2 : 1);
   const headers = buildHeaders(headerRow, hasSubHeader ? subHeaderRow : []);
-  const mappedRows = rows.slice(dataStartIndex).map((row) => mapRow(headers, row));
+  const mappedRows = rows.slice(dataStartIndex).map((row) => normalizeAliases(mapRow(headers, row), headers));
 
   const validRows = mappedRows.filter((row) => {
     const date = String(row["Date"] ?? "").trim();
     const machine = String(row["Machine Name"] ?? row["Machine No."] ?? "").trim();
     const production = row["Actual Production Qty."];
     const hasProduction = production !== undefined && production !== null && String(production).trim() !== "";
-    return date !== "" || machine !== "" || hasProduction;
+    return date !== "" || machine !== "" || String(row["Line"] ?? "").trim() !== "" || hasProduction
+      || row["Total Idle Time (Minutes)"] !== undefined || row["Total Rejection (Pcs Qty.)"] !== undefined;
   });
 
   const { records, warnings } = normalizeDprRows(validRows);
@@ -133,6 +181,21 @@ function buildParsedResult(args: {
 
   validationIssues.push(...warnings);
 
+  const detectedKeys = Object.keys(FIELD_ALIASES).filter((key) =>
+    validRows.some((candidate) => candidate[key] !== undefined && String(candidate[key]).trim() !== "")
+  );
+  const availableFields = detectedKeys.map((key) => FIELD_LABELS[key]);
+  const hasOee = ["Availability Ratio (A)", "Operator Efficiency (Performance Ratio) - (P)", "Quantity Ratio (Q)"].every(
+    (key) => validRows.some((row) => row[key] !== undefined && String(row[key]).trim() !== "")
+  );
+  const hasProduction = detectedKeys.includes("Actual Production Qty.");
+  const hasDowntime = detectedKeys.includes("Total Idle Time (Minutes)");
+  const hasQuality = detectedKeys.includes("Total Rejection (Pcs Qty.)");
+  const analysisMode = hasOee ? "oee" : hasProduction && hasDowntime && hasQuality ? "manufacturing" : hasProduction && hasDowntime ? "production-downtime" : hasProduction && hasQuality ? "production-quality" : hasDowntime ? "downtime" : "overview";
+  const cellCount = Math.max(1, validRows.length * Math.max(1, headers.length));
+  const missingCells = validRows.reduce((total, row) => total + headers.filter((header) => row[header] === undefined || String(row[header]).trim() === "").length, 0);
+  const duplicateRows = validRows.length - new Set(validRows.map((row) => JSON.stringify(row))).size;
+
   return {
     fileName,
     fileSize,
@@ -146,7 +209,33 @@ function buildParsedResult(args: {
     records,
     validationIssues,
     dashboardReference: parseDashboardReference(dashboardSheetRows),
+    availableFields,
+    analysisMode,
+    dataQuality: { missingPercent: (missingCells / cellCount) * 100, duplicateRows, sheetNames, recommendedSheetName },
   };
+}
+
+function selectAnalysisSheet(workbook: XLSX.WorkBook): string {
+  const candidates = workbook.SheetNames.map((name) => {
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[name], { header: 1, raw: true, defval: "" });
+    const headerRow = rows.slice(0, 40).find((row) => row.some((cell) => normalizeCell(cell) === "date" || normalizeCell(cell).includes("production") || normalizeCell(cell).includes("downtime"))) ?? [];
+    const recognized = headerRow.filter((cell) => Object.values(FIELD_ALIASES).some((aliases) => aliases.some((alias) => normalizeCell(cell) === normalizeCell(alias)))).length;
+    const populatedRows = rows.slice(1).filter((row) => row.some((cell) => String(cell ?? "").trim() !== "")).length;
+    const score = recognized * 1000 + Math.min(populatedRows, 10000);
+    return { name, score };
+  }).sort((a, b) => b.score - a.score);
+  const selected = candidates[0];
+  if (!selected || selected.score === 0) throw new Error("No analyzable manufacturing data was found.");
+  return selected.name;
+}
+
+function normalizeAliases(row: DprRawRow, headers: string[]): DprRawRow {
+  const normalizedHeaders = headers.map(normalizeCell);
+  Object.entries(FIELD_ALIASES).forEach(([canonical, aliases]) => {
+    const aliasIndex = normalizedHeaders.findIndex((header) => aliases.some((alias) => normalizeCell(alias) === header));
+    if (aliasIndex >= 0 && row[headers[aliasIndex]] !== undefined) row[canonical] = row[headers[aliasIndex]];
+  });
+  return row;
 }
 
 function detectHeaderRowIndex(rows: unknown[][]): number {
@@ -166,7 +255,7 @@ function detectHeaderRowIndex(rows: unknown[][]): number {
     }
   });
 
-  return winnerScore >= 4 ? winner : -1;
+  return winnerScore >= 1 ? winner : -1;
 }
 
 function detectSubHeader(row: unknown[]): boolean {

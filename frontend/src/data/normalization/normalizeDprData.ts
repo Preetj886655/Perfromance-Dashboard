@@ -6,6 +6,7 @@ export type DprRecord = {
   date?: string;
   productionHour?: number;
   shift?: string;
+  lineName?: string;
   machineName?: string;
   materialName?: string;
   machineNo?: string;
@@ -19,7 +20,9 @@ export type DprRecord = {
   cavity?: number;
   cycleTimeSec?: number;
   targetQtyPerHour?: number;
+  targetProduction?: number;
   actualProductionQty?: number;
+  productionLoss?: number;
   plannedDownTimeMinutes?: number;
   availableTimeMinutes?: number;
   idleReason?: string;
@@ -71,7 +74,9 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
   const machineNo = toText(row["Machine No."]);
   const actualProductionQty = toNumber(row["Actual Production Qty."]);
 
-  const hasSignal = Boolean(date) || Boolean(machineName) || Boolean(machineNo) || isFiniteNumber(actualProductionQty);
+  const hasSignal = Boolean(date) || Boolean(machineName) || Boolean(machineNo) || Boolean(row["Line"])
+    || isFiniteNumber(actualProductionQty) || isFiniteNumber(toNumber(row["Total Idle Time (Minutes)"]))
+    || isFiniteNumber(toNumber(row["Total Rejection (Pcs Qty.)"]));
   if (!hasSignal) {
     return null;
   }
@@ -95,6 +100,7 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
     date: date ?? undefined,
     productionHour: toNumber(row["Production Hour"]) ?? undefined,
     shift: toText(row["Shift"]) ?? undefined,
+    lineName: toText(row["Line"]) ?? undefined,
     machineName: machineName ?? undefined,
     materialName: toText(row["Material Name"]) ?? undefined,
     machineNo: machineNo ?? undefined,
@@ -108,10 +114,12 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
     cavity: toNumber(row["Cavity"]) ?? undefined,
     cycleTimeSec: toNumber(row["Cycle Time (Sec.)"]) ?? undefined,
     targetQtyPerHour: toNumber(row["Target Qty./Hr. (Pcs.)"]) ?? undefined,
+    targetProduction: toNumber(row["Production Target"]) ?? undefined,
     actualProductionQty: actualProductionQty ?? undefined,
+    productionLoss: toNumber(row["Production Loss"]) ?? undefined,
     plannedDownTimeMinutes: toNumber(row["Planned Down Time (Tea/Lunch)"]) ?? undefined,
     availableTimeMinutes: toNumber(row["Available Time"]) ?? undefined,
-    idleReason: toText(row["Reason of Idle Time (Unplanned BD Time in Minutes)"]) ?? idleReasonFromBreakup ?? undefined,
+    idleReason: toText(row["Reason of Idle Time (Unplanned BD Time in Minutes)"]) ?? toText(row["Downtime Reason"]) ?? idleReasonFromBreakup ?? undefined,
     idleReasonBreakup,
     totalIdleTimeMinutes: toNumber(row["Total Idle Time (Minutes)"]) ?? undefined,
     totalRunTimeMinutes: toNumber(row["Total Run Time (Minutes)"]) ?? undefined,
@@ -125,7 +133,7 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
     rejectionPpm: toNumber(row["Rejection PPM"]) ?? undefined,
     qualityRatio: toRatio(row["Quantity Ratio (Q)"]) ?? undefined,
     sourceOeeRatio: toRatio(row["OEE (A*P*Q)"]) ?? undefined,
-    remarks: toText(row["Any Other Remarks"]) ?? undefined,
+    remarks: toText(row["Any Other Remarks"]) ?? toText(row["Description"]) ?? undefined,
     customColumns,
     raw: row,
   };

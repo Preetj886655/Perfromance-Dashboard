@@ -9,6 +9,7 @@ import {
 } from "../data/calculations/oeeCalculator";
 import { calculateProductionKpis } from "../data/calculations/productionKpis";
 import { calculateQualityAnalysis } from "../data/calculations/qualityAnalysis";
+import { calculateManufacturingAnalysis } from "../data/calculations/manufacturingAnalysis";
 import type { DprRecord, DprValidationIssue } from "../data/normalization/normalizeDprData";
 import { parseDprWorkbookFile, type ParsedDprWorkbook } from "../data/parser/excelParser";
 import { loadDashboardDataset, saveDashboardDataset, type DashboardDatasetState } from "../data/state/dashboardDataStore";
@@ -607,6 +608,7 @@ export function ManufacturingDashboard() {
   const [dataset, setDataset] = useState<DashboardDatasetState | null>(() => loadDashboardDataset());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewResult, setPreviewResult] = useState<ParsedDprWorkbook | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -631,6 +633,10 @@ export function ManufacturingDashboard() {
   const machineOee = useMemo(() => calculateMachineOee(filteredRecords), [filteredRecords]);
   const shiftOee = useMemo(() => calculateShiftOee(filteredRecords), [filteredRecords]);
   const dailySeries = useMemo(() => buildDailySeries(filteredRecords), [filteredRecords]);
+  const importAnalysis = useMemo(
+    () => previewResult ? calculateManufacturingAnalysis(previewResult.records) : null,
+    [previewResult]
+  );
 
   const topDowntimeReason = downtime.byReason[0]?.key ?? null;
 
@@ -734,8 +740,9 @@ export function ManufacturingDashboard() {
     setPreviewing(true);
 
     try {
-      const parsed = await parseDprWorkbookFile(selectedFile);
+      const parsed = await parseDprWorkbookFile(selectedFile, selectedSheet || undefined);
       setPreviewResult(parsed);
+      setSelectedSheet(parsed.sheetName);
     } catch (error) {
       setPreviewResult(null);
       setPreviewError(error instanceof Error ? error.message : "Unable to process file.");
@@ -1027,7 +1034,20 @@ export function ManufacturingDashboard() {
       .sort((a, b) => a.localeCompare(b));
 
     const summaryMachines = [...new Set(summaryRecords.map((row) => row.machineName || row.machineNo).filter(Boolean))].length;
+    const summaryLines = [...new Set(summaryRecords.map((row) => row.lineName).filter(Boolean))].length;
     const summaryShifts = [...new Set(summaryRecords.map((row) => row.shift).filter(Boolean))].length;
+    const summaryParts = [...new Set(summaryRecords.map((row) => row.partName || row.partNo).filter(Boolean))].length;
+    const analysisModeLabel = previewResult?.analysisMode === "oee" ? "OEE Performance" : previewResult?.analysisMode === "manufacturing" ? "Manufacturing Performance" : previewResult?.analysisMode === "production-downtime" ? "Production & Downtime Performance" : previewResult?.analysisMode === "production-quality" ? "Production & Quality Performance" : previewResult?.analysisMode === "downtime" ? "Downtime Analysis" : "Data Overview / Exploratory Analysis";
+    const summaryProduction = summaryRecords.reduce((total, row) => total + (row.actualProductionQty ?? 0), 0);
+    const summaryTarget = summaryRecords.reduce((total, row) => total + (row.targetProduction ?? 0), 0);
+    const summaryDowntime = summaryRecords.reduce((total, row) => total + (row.totalIdleTimeMinutes ?? 0), 0);
+    const summaryRejection = summaryRecords.reduce((total, row) => total + (row.totalRejectionQty ?? 0), 0);
+    const summaryLoss = summaryRecords.reduce((total, row) => total + (row.productionLoss ?? 0), 0);
+    const topReason = [...summaryRecords.reduce((counts, row) => {
+      const reason = row.idleReason || "Unspecified";
+      counts.set(reason, (counts.get(reason) ?? 0) + (row.totalIdleTimeMinutes ?? 0));
+      return counts;
+    }, new Map<string, number>()).entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
 
     return (
       <SimplePage title="Data Import Center" subtitle="CSV / Excel Preview">
@@ -1047,6 +1067,7 @@ export function ManufacturingDashboard() {
                 onChange={(event) => {
                   setSelectedFile(event.target.files?.[0] ?? null);
                   setPreviewResult(null);
+                  setSelectedSheet("");
                   setPreviewError(null);
                 }}
               />
@@ -1071,6 +1092,25 @@ export function ManufacturingDashboard() {
 
           {previewResult ? (
             <>
+              {previewResult.dataQuality.sheetNames.length > 1 ? (
+                <label className="field field--wide">
+                  <span className="field__label">Detected Sheets</span>
+                  <select value={previewResult.sheetName} onChange={async (event) => {
+                    setSelectedSheet(event.target.value);
+                    if (!selectedFile) return;
+                    setPreviewing(true);
+                    try {
+                      setPreviewResult(await parseDprWorkbookFile(selectedFile, event.target.value));
+                    } catch (error) {
+                      setPreviewError(error instanceof Error ? error.message : "Unable to process selected sheet.");
+                    } finally {
+                      setPreviewing(false);
+                    }
+                  }}>
+                    {previewResult.dataQuality.sheetNames.map((sheet) => <option key={sheet} value={sheet}>{sheet}{sheet === previewResult.dataQuality.recommendedSheetName ? " (recommended)" : ""}</option>)}
+                  </select>
+                </label>
+              ) : null}
               <div className="upload-summary">
                 <div className="summary-block"><span>Dataset</span><strong>{previewResult.sheetName}</strong></div>
                 <div className="summary-block"><span>Records</span><strong>{toPlainNumber(previewResult.rowCount, 0)}</strong></div>
@@ -1078,9 +1118,86 @@ export function ManufacturingDashboard() {
                 <div className="summary-block"><span>File</span><strong>{previewResult.fileName}</strong></div>
                 <div className="summary-block"><span>Date Range</span><strong>{formatDateForDisplay(summaryDates[0])} → {formatDateForDisplay(summaryDates[summaryDates.length - 1])}</strong></div>
                 <div className="summary-block"><span>Machines</span><strong>{summaryMachines}</strong></div>
+                <div className="summary-block"><span>Lines</span><strong>{summaryLines || "N/A"}</strong></div>
                 <div className="summary-block"><span>Shifts</span><strong>{summaryShifts}</strong></div>
+                <div className="summary-block"><span>Parts</span><strong>{summaryParts || "N/A"}</strong></div>
                 <div className="summary-block"><span>Header Row</span><strong>{previewResult.headerRowIndex + 1}</strong></div>
               </div>
+
+              <div className="panel panel--success">
+                <h3 style={{ marginTop: 0 }}>File analyzed successfully</h3>
+                <p className="field__hint"><strong>Analysis mode:</strong> {analysisModeLabel}</p>
+                <p className="field__hint">{previewResult.analysisMode === "oee" ? "OEE inputs detected and the existing OEE dashboard remains available." : "OEE metrics are not available in this file. The dashboard is showing alternative performance analysis from detected fields."}</p>
+                <div className="upload-summary">
+                  <div className="summary-block"><span>Production</span><strong>{toPlainNumber(summaryProduction, 0)}</strong></div>
+                  <div className="summary-block"><span>Target Achievement</span><strong>{summaryTarget > 0 ? `${((summaryProduction / summaryTarget) * 100).toFixed(1)}%` : "N/A"}</strong></div>
+                  <div className="summary-block"><span>Downtime</span><strong>{toPlainNumber(summaryDowntime, 0)} min</strong></div>
+                  <div className="summary-block"><span>Production Loss</span><strong>{toPlainNumber(summaryLoss, 0)}</strong></div>
+                  <div className="summary-block"><span>Rejection Rate</span><strong>{summaryProduction > 0 ? `${((summaryRejection / summaryProduction) * 100).toFixed(2)}%` : "N/A"}</strong></div>
+                </div>
+              </div>
+
+              <div className="panel panel--muted">
+                <h3 style={{ marginTop: 0 }}>Available Data</h3>
+                <p className="field__hint">{previewResult.availableFields.map((field) => `✓ ${field}`).join("   ") || "No predefined manufacturing fields detected"}</p>
+                {previewResult.analysisMode !== "oee" ? <p className="field__hint">⚠ OEE inputs unavailable; this is not an import failure.</p> : null}
+                <p className="field__hint">Missing values: {previewResult.dataQuality.missingPercent.toFixed(1)}% · Duplicate rows: {previewResult.dataQuality.duplicateRows}</p>
+              </div>
+
+              <div className="panel">
+                <h3 style={{ marginTop: 0 }}>Automated Insights</h3>
+                <ul className="field__hint">
+                  {importAnalysis?.insights.map((insight) => <li key={insight}>{insight}</li>)}
+                  {summaryTarget > 0 ? <li>Recorded production is {summaryProduction >= summaryTarget ? "above" : "below"} target by {Math.abs(summaryProduction - summaryTarget).toLocaleString()} units.</li> : null}
+                  {summaryProduction > 0 && summaryRejection > 0 ? <li>Rejection rate is {((summaryRejection / summaryProduction) * 100).toFixed(2)}% of recorded production.</li> : null}
+                  {!summaryDowntime && !summaryTarget && !summaryRejection ? <li>Insufficient data to determine a manufacturing performance pattern.</li> : null}
+                </ul>
+              </div>
+
+              {importAnalysis && importAnalysis.daily.length > 0 ? (
+                <div className="panel">
+                  <h3 style={{ marginTop: 0 }}>Performance Trend</h3>
+                  <ReactECharts option={{
+                    backgroundColor: "transparent",
+                    tooltip: { trigger: "axis" },
+                    legend: { textStyle: { color: "#a9bbd3" } },
+                    xAxis: { type: "category", data: importAnalysis.daily.map((item) => item.key), axisLabel: { color: "#a9bbd3" } },
+                    yAxis: { type: "value", axisLabel: { color: "#a9bbd3" } },
+                    series: [
+                      { name: "Production", type: "line", data: importAnalysis.daily.map((item) => item.production), itemStyle: { color: "#38bdf8" }, smooth: true },
+                      ...(importAnalysis.daily.some((item) => item.target > 0) ? [{ name: "Target", type: "line", data: importAnalysis.daily.map((item) => item.target), itemStyle: { color: "#34d399" }, smooth: true }] : []),
+                    ],
+                  }} style={{ height: 280 }} />
+                </div>
+              ) : null}
+
+              {importAnalysis && importAnalysis.productionByMachine.length > 0 ? (
+                <div className="panel">
+                  <h3 style={{ marginTop: 0 }}>Production by Machine</h3>
+                  <ReactECharts option={{
+                    backgroundColor: "transparent",
+                    tooltip: { trigger: "axis" },
+                    grid: { left: 120, right: 20, top: 10, bottom: 30 },
+                    xAxis: { type: "value", axisLabel: { color: "#a9bbd3" } },
+                    yAxis: { type: "category", data: importAnalysis.productionByMachine.slice(0, 12).map((item) => item.key).reverse(), axisLabel: { color: "#a9bbd3" } },
+                    series: [{ type: "bar", data: importAnalysis.productionByMachine.slice(0, 12).map((item) => item.value).reverse(), itemStyle: { color: "#67e8f9" } }],
+                  }} style={{ height: 300 }} />
+                </div>
+              ) : null}
+
+              {topReason.length > 0 && summaryDowntime > 0 ? (
+                <div className="panel">
+                  <h3 style={{ marginTop: 0 }}>Downtime Analysis</h3>
+                  <ReactECharts option={{
+                    backgroundColor: "transparent",
+                    tooltip: { trigger: "axis" },
+                    grid: { left: 140, right: 20, top: 10, bottom: 30 },
+                    xAxis: { type: "value", axisLabel: { color: "#a9bbd3" } },
+                    yAxis: { type: "category", data: topReason.map(([reason]) => reason).reverse(), axisLabel: { color: "#a9bbd3" } },
+                    series: [{ type: "bar", data: topReason.map(([, minutes]) => minutes).reverse(), itemStyle: { color: "#fbbf24" } }],
+                  }} style={{ height: 280 }} />
+                </div>
+              ) : null}
 
               <div className="panel panel--muted">
                 <h3 style={{ marginTop: 0 }}>File Status</h3>
