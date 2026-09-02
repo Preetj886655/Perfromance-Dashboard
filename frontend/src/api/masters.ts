@@ -231,6 +231,15 @@ export type ImportPreview = {
   preview_limit: number;
 };
 
+export type ImportMappingValidation = {
+  source_type: string;
+  valid: boolean;
+  required_fields: string[];
+  missing_fields: string[];
+  mapped_fields: Record<string, string>;
+  warnings: string[];
+};
+
 export function previewImportFile(file: File, sourceType: string): Promise<ImportPreview> {
   const formData = new FormData();
   formData.append("file", file);
@@ -238,28 +247,10 @@ export function previewImportFile(file: File, sourceType: string): Promise<Impor
   return apiUpload<ImportPreview>(`${BASE}/imports/preview`, formData);
 }
 
-export type DprOeeImportResult = {
-  import_job_id: string;
-  status: string;
-  total_rows: number;
-  success_count: number;
-  error_count: number;
-  message: string;
-};
-
-/**
- * Commits a DPR_OEE Excel or CSV file to Master Data (POST /imports/dpr-oee
- * or /imports/dpr-oee/csv, chosen by sourceType). Reuses the same commit
- * pipeline as the backend Excel importer — CSV Import Phase 1.
- */
-export function commitDprOeeImport(
-  file: File,
-  plantId: string,
-  sourceType: "excel" | "csv",
-): Promise<DprOeeImportResult> {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("plant_id", plantId);
-  const path = sourceType === "csv" ? "/imports/dpr-oee/csv" : "/imports/dpr-oee";
-  return apiUpload<DprOeeImportResult>(`${BASE}${path}`, formData);
+export function validateImportMapping(payload: {
+  source_type: string;
+  headers: string[];
+  mapping: Record<string, unknown>;
+}): Promise<ImportMappingValidation> {
+  return apiPost<ImportMappingValidation>(`${BASE}/imports/validate-mapping`, payload);
 }

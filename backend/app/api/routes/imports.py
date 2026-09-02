@@ -8,7 +8,6 @@ and queues SSE events for dashboard refresh (transaction-safe).
 
 from __future__ import annotations
 
-import csv
 import io
 from datetime import date
 from typing import Annotated
@@ -31,6 +30,8 @@ from app.api.schemas.imports import (
     ImportJobRowResponse,
     ImportJobRowsPageResponse,
     ImportJobSummaryResponse,
+    ImportMappingValidationRequest,
+    ImportMappingValidationResponse,
     ImportPreviewResponse,
 )
 from app.core.rbac import require_permission
@@ -40,8 +41,12 @@ from app.models.data_source import DataSource
 from app.models.import_job import ImportJob
 from app.models.import_job_row import ImportJobRow
 from app.models.production_record import ProductionRecord
-from app.services.dpr_oee_ingestion import ImportJobResult, ingest_dpr_oee_csv, ingest_dpr_oee_workbook
+from app.services.dpr_oee_ingestion import ingest_dpr_oee_workbook
 from app.services.event_queue import queue_oee_updated_event
+from app.services.flexible_workbook_ingestion import (
+    ingest_flexible_csv,
+    ingest_flexible_workbook,
+)
 from app.services.oee_rollup import (
     PERIOD_DAY,
     SCOPE_MACHINE,
@@ -56,7 +61,6 @@ router = APIRouter(
 )
 
 _ALLOWED_EXTENSIONS = (".xlsx", ".xlsm")
-_ALLOWED_CSV_EXTENSIONS = (".csv",)
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MiB soft guard
 
 
@@ -84,62 +88,6 @@ def _import_message(status: str, error_summary: str | None) -> str:
     if status == "failed":
         return "Import failed"
     return f"Import finished with status={status}"
-
-
-def _trigger_rollup_and_events(db: Session, plant_id: UUID, result: ImportJobResult) -> None:
-    """Roll up plant + machine OEE snapshots and queue SSE events after a
-    committed import with successful records. Shared by the Excel and CSV
-    commit routes — identical to the block previously inlined in
-    ``upload_dpr_oee`` (Excel-only originally; behavior unchanged for Excel).
-    """
-    if not (result.status == "committed" and result.success_count > 0):
-        return
-    try:
-        # Get production_date from the first successful record
-        production_date: date | None = None
-        if result.production_record_ids:
-            rec = db.get(ProductionRecord, result.production_record_ids[0])
-            if rec is not None:
-                production_date = rec.production_date
-
-        if production_date is not None:
-            # Plant-level rollup aggregates all machines for this plant+date
-            plant_snap = rollup_plant_day(db, plant_id, production_date)
-            db.flush()
-
-            # Queue event if snapshot was created/updated
-            if plant_snap is not None:
-                queue_oee_updated_event(
-                    db,
-                    scope_type=SCOPE_PLANT,
-                    scope_id=plant_id,
-                    period_type=PERIOD_DAY,
-                    period_start=production_date,
-                )
-
-            # Also rollup individual machines for dashboard drill-down
-            machines = db.scalars(
-                select(ProductionRecord.machine_id)
-                .distinct()
-                .where(ProductionRecord.id.in_(result.production_record_ids))
-            ).all()
-
-            for machine_id in machines:
-                if machine_id is not None:
-                    machine_snap = rollup_machine_day(db, machine_id, production_date)
-                    db.flush()
-                    if machine_snap is not None:
-                        queue_oee_updated_event(
-                            db,
-                            scope_type=SCOPE_MACHINE,
-                            scope_id=machine_id,
-                            period_type=PERIOD_DAY,
-                            period_start=production_date,
-                        )
-    except Exception as exc:
-        # Log but don't fail the import on rollup/event-queue errors
-        # (production data is still committed)
-        print(f"Warning: Rollup or event queue failed after import: {exc}")
 
 
 def _normalise_source_type(source_type: str | None) -> str:
@@ -283,14 +231,16 @@ async def preview_import_file(
     try:
         if lower.endswith(".csv"):
             text = contents.decode("utf-8-sig")
-            reader = csv.reader(io.StringIO(text))
-            csv_rows = [row for row in reader if any(cell.strip() for cell in row)]
-            if not csv_rows:
-                raise HTTPException(status_code=400, detail=_safe_detail("CSV file is empty"))
-            headers = [cell.strip() for cell in csv_rows[0]]
             rows = []
-            for values in csv_rows[1:]:
-                row = dict(zip(headers, [v.strip() for v in values], strict=False))
+            lines = text.splitlines()
+            if not lines:
+                raise HTTPException(status_code=400, detail=_safe_detail("CSV file is empty"))
+            headers = [cell.strip() for cell in lines[0].split(",")]
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                values = [cell.strip() for cell in line.split(",")]
+                row = dict(zip(headers, values, strict=False))
                 rows.append(row)
             return ImportPreviewResponse(
                 source_type=source_type,
@@ -324,12 +274,77 @@ async def preview_import_file(
         raise HTTPException(status_code=400, detail=_safe_detail(f"Unable to preview file: {exc}")) from exc
 
 
+_PRODUCTION_MAPPING_REQUIRED_FIELDS = [
+    "plant_code",
+    "line_code",
+    "machine_code",
+    "part_code",
+    "production_date",
+    "shift_code",
+    "start_at",
+    "stop_at",
+    "produced_qty",
+]
+
+
+@router.post(
+    "/imports/validate-mapping",
+    response_model=ImportMappingValidationResponse,
+    dependencies=[Depends(require_permission("imports", "READ"))],
+    summary="Validate a mapping between uploaded headers and required production fields",
+)
+def validate_import_mapping(
+    payload: ImportMappingValidationRequest,
+    db: Session = Depends(get_db),
+) -> ImportMappingValidationResponse:
+    del db
+    source_type = _normalise_source_type(payload.source_type)
+    headers = [str(h).strip() for h in payload.headers or [] if str(h).strip()]
+    mapping = payload.mapping or {}
+
+    required_fields = list(_PRODUCTION_MAPPING_REQUIRED_FIELDS)
+    missing_fields: list[str] = []
+    mapped_fields: dict[str, str] = {}
+    warnings: list[str] = []
+
+    for field_name in required_fields:
+        raw_value = mapping.get(field_name)
+        if raw_value is None:
+            missing_fields.append(field_name)
+            continue
+        value = str(raw_value).strip()
+        if not value:
+            missing_fields.append(field_name)
+            continue
+        if value not in headers:
+            missing_fields.append(field_name)
+            continue
+        mapped_fields[field_name] = value
+
+    if source_type in {"csv", "excel"} and not headers:
+        raise HTTPException(status_code=400, detail=_safe_detail("Headers are required to validate a mapping"))
+
+    if not mapped_fields:
+        warnings.append("No required production fields were mapped to the uploaded headers.")
+
+    return ImportMappingValidationResponse(
+        source_type=source_type,
+        valid=not missing_fields,
+        required_fields=required_fields,
+        missing_fields=missing_fields,
+        mapped_fields=mapped_fields,
+        warnings=warnings,
+    )
+
+
 @router.post(
     "/imports/dpr-oee",
     response_model=DprOeeImportResponse,
     dependencies=[Depends(require_permission("imports", "CREATE"))],
-    summary="Upload DPR_OEE Excel workbook",
+    summary="Upload DPR_OEE Excel workbook (LEGACY — use /imports/flexible)",
     description=(
+        "LEGACY ENDPOINT — Use POST /api/v1/imports/flexible for new imports. "
+        "This endpoint is maintained for backward compatibility with rigid DPR_OEE template format. "
         "Development/internal endpoint (authentication not yet implemented). "
         "Multipart: Excel file + plant_id (+ optional uploaded_by). "
         "Calls ingest_dpr_oee_workbook and triggers OEE rollup. "
@@ -410,7 +425,55 @@ async def upload_dpr_oee(
             detail=_safe_detail("Unexpected error during import"),
         ) from None
 
-    _trigger_rollup_and_events(db, plant_id, result)
+    # Trigger rollup for committed imports with successful records.
+    # This ensures oee_snapshots are created/updated, making data visible to dashboard.
+    if result.status == "committed" and result.success_count > 0:
+        try:
+            # Get production_date from the first successful record
+            production_date: date | None = None
+            if result.production_record_ids:
+                rec = db.get(ProductionRecord, result.production_record_ids[0])
+                if rec is not None:
+                    production_date = rec.production_date
+
+            if production_date is not None:
+                # Plant-level rollup aggregates all machines for this plant+date
+                plant_snap = rollup_plant_day(db, plant_id, production_date)
+                db.flush()
+
+                # Queue event if snapshot was created/updated
+                if plant_snap is not None:
+                    queue_oee_updated_event(
+                        db,
+                        scope_type=SCOPE_PLANT,
+                        scope_id=plant_id,
+                        period_type=PERIOD_DAY,
+                        period_start=production_date,
+                    )
+
+                # Also rollup individual machines for dashboard drill-down
+                machines = db.scalars(
+                    select(ProductionRecord.machine_id)
+                    .distinct()
+                    .where(ProductionRecord.id.in_(result.production_record_ids))
+                ).all()
+
+                for machine_id in machines:
+                    if machine_id is not None:
+                        machine_snap = rollup_machine_day(db, machine_id, production_date)
+                        db.flush()
+                        if machine_snap is not None:
+                            queue_oee_updated_event(
+                                db,
+                                scope_type=SCOPE_MACHINE,
+                                scope_id=machine_id,
+                                period_type=PERIOD_DAY,
+                                period_start=production_date,
+                            )
+        except Exception as exc:
+            # Log but don't fail the import on rollup/event-queue errors
+            # (production data is still committed)
+            print(f"Warning: Rollup or event queue failed after import: {exc}")
 
     # Session commit is owned by get_db after successful response.
     # SSE events are emitted by get_db() only if commit succeeds.
@@ -425,20 +488,16 @@ async def upload_dpr_oee(
 
 
 @router.post(
-    "/imports/dpr-oee/csv",
+    "/imports/flexible",
     response_model=DprOeeImportResponse,
     dependencies=[Depends(require_permission("imports", "CREATE"))],
-    summary="Upload DPR_OEE CSV export",
+    summary="Upload flexible manufacturing data (Excel or CSV)",
     description=(
-        "CSV Import — Phase 1. Development/internal endpoint (authentication "
-        "not yet implemented). Multipart: CSV file + plant_id (+ optional "
-        "uploaded_by). Expects a CSV with the same physical layout as the "
-        "DPR_OEE Excel template (headers on row 3, data from row 5) — i.e. "
-        "'Save As CSV' from the same workbook, not an arbitrary CSV. Reuses "
-        "the same validation, duplicate policy, and persistence path as "
-        "/imports/dpr-oee; only source_type differs (\"csv\"). Calls "
-        "ingest_dpr_oee_csv and triggers OEE rollup. API session commits on "
-        "success; SSE events emitted after commit."
+        "Development/internal endpoint (authentication not yet implemented). "
+        "Multipart: Excel/CSV file + plant_id (+ optional uploaded_by). "
+        "Auto-detects sheet and headers; maps flexible column names to canonical fields. "
+        "Calls ingest_flexible_workbook or ingest_flexible_csv and triggers OEE rollup. "
+        "API session commits on success; SSE events emitted after commit."
     ),
     responses={
         400: {"description": "Invalid upload or plant_id"},
@@ -447,9 +506,9 @@ async def upload_dpr_oee(
         500: {"description": "Unexpected server error"},
     },
 )
-async def upload_dpr_oee_csv(
-    file: Annotated[UploadFile, File(description="DPR_OEE CSV export (.csv)")],
-    plant_id: Annotated[UUID, Form(description="Target plant UUID (Q11 — required)")],
+async def upload_flexible(
+    file: Annotated[UploadFile, File(description="Manufacturing data file (.xlsx/.xlsm/.csv)")],
+    plant_id: Annotated[UUID, Form(description="Target plant UUID (required)")],
     uploaded_by: Annotated[
         UUID | None,
         Form(description="Optional uploader user UUID (no auth yet)"),
@@ -460,13 +519,16 @@ async def upload_dpr_oee_csv(
     if not filename:
         raise HTTPException(
             status_code=400,
-            detail=_safe_detail("CSV file is required"),
+            detail=_safe_detail("File is required"),
         )
     lower = filename.lower()
-    if not lower.endswith(_ALLOWED_CSV_EXTENSIONS):
+    is_excel = lower.endswith(_ALLOWED_EXTENSIONS)
+    is_csv = lower.endswith(".csv")
+
+    if not (is_excel or is_csv):
         raise HTTPException(
             status_code=400,
-            detail=_safe_detail("File must be a CSV (.csv)"),
+            detail=_safe_detail("File must be Excel (.xlsx/.xlsm) or CSV"),
         )
 
     try:
@@ -474,27 +536,50 @@ async def upload_dpr_oee_csv(
     except Exception:  # noqa: BLE001
         raise HTTPException(
             status_code=400,
-            detail=_safe_detail("Failed to read uploaded file"),
+            detail=_safe_detail("Failed to read file"),
         ) from None
 
-    if not content:
+    if len(content) == 0:
         raise HTTPException(
             status_code=400,
-            detail=_safe_detail("Uploaded file is empty"),
+            detail=_safe_detail("File is empty"),
         )
+
     if len(content) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=400,
-            detail=_safe_detail("Uploaded file exceeds maximum allowed size"),
+            detail=_safe_detail(f"File exceeds {_MAX_UPLOAD_BYTES / (1024*1024):.0f} MiB limit"),
         )
 
     try:
-        result = ingest_dpr_oee_csv(
-            db,
-            content,
-            plant_id=plant_id,
-            uploaded_by=uploaded_by,
-        )
+        if is_csv:
+            # Decode CSV content and ingest
+            csv_text = content.decode("utf-8")
+            result = ingest_flexible_csv(
+                db=db,
+                csv_content=csv_text,
+                plant_id=plant_id,
+                import_job_id=None,
+                uploaded_by=uploaded_by,
+            )
+        else:
+            # Excel — write to temp file and ingest
+            import tempfile
+            from pathlib import Path
+            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = Path(tmp.name)
+            try:
+                result = ingest_flexible_workbook(
+                    db=db,
+                    file_path=tmp_path,
+                    plant_id=plant_id,
+                    import_job_id=None,
+                    uploaded_by=uploaded_by,
+                )
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
     except ValueError as exc:
         # plant_id not found (raised before job creation)
         msg = str(exc)
@@ -515,8 +600,58 @@ async def upload_dpr_oee_csv(
             detail=_safe_detail("Unexpected error during import"),
         ) from None
 
-    _trigger_rollup_and_events(db, plant_id, result)
+    # Trigger rollup for committed imports with successful records.
+    # This ensures oee_snapshots are created/updated, making data visible to dashboard.
+    if result.status == "committed" and result.success_count > 0:
+        try:
+            # Get production_date from the first successful record
+            production_date: date | None = None
+            if result.production_record_ids:
+                rec = db.get(ProductionRecord, result.production_record_ids[0])
+                if rec is not None:
+                    production_date = rec.production_date
 
+            if production_date is not None:
+                # Plant-level rollup aggregates all machines for this plant+date
+                plant_snap = rollup_plant_day(db, plant_id, production_date)
+                db.flush()
+
+                # Queue event if snapshot was created/updated
+                if plant_snap is not None:
+                    queue_oee_updated_event(
+                        db,
+                        scope_type=SCOPE_PLANT,
+                        scope_id=plant_id,
+                        period_type=PERIOD_DAY,
+                        period_start=production_date,
+                    )
+
+                # Also rollup individual machines for dashboard drill-down
+                machines = db.scalars(
+                    select(ProductionRecord.machine_id)
+                    .distinct()
+                    .where(ProductionRecord.id.in_(result.production_record_ids))
+                ).all()
+
+                for machine_id in machines:
+                    if machine_id is not None:
+                        machine_snap = rollup_machine_day(db, machine_id, production_date)
+                        db.flush()
+                        if machine_snap is not None:
+                            queue_oee_updated_event(
+                                db,
+                                scope_type=SCOPE_MACHINE,
+                                scope_id=machine_id,
+                                period_type=PERIOD_DAY,
+                                period_start=production_date,
+                            )
+        except Exception as exc:
+            # Log but don't fail the import on rollup/event-queue errors
+            # (production data is still committed)
+            print(f"Warning: Rollup or event queue failed after import: {exc}")
+
+    # Session commit is owned by get_db after successful response.
+    # SSE events are emitted by get_db() only if commit succeeds.
     return DprOeeImportResponse(
         import_job_id=result.import_job_id,
         status=result.status,

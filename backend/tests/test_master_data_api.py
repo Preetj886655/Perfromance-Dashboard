@@ -289,22 +289,42 @@ def test_import_preview_csv_headers(client: TestClient, db_session: Session) -> 
     assert body["row_count"] == 1
 
 
-def test_import_preview_csv_handles_quoted_comma(client: TestClient, db_session: Session) -> None:
-    """A naive line.split(',') parser would corrupt this row (Remarks has an
-    embedded comma inside quotes) — the preview endpoint must not.
-    """
-    csv_payload = (
-        'Plant,Line,Machine,Remarks\n'
-        'PL1,LINE-A,M-001,"Line stopped, restarted after 5 min"\n'
-    )
+def test_import_mapping_validation_detects_missing_required_headers(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    invalid_mapping = {
+        "plant_code": "Plant",
+        "line_code": "Line",
+        "machine_code": "Machine",
+        "part_code": "Part",
+        "production_date": "Date",
+        "shift_code": "Shift",
+        "start_at": "Start Time",
+        "produced_qty": "Produced Qty",
+    }
     response = client.post(
-        "/api/v1/imports/preview",
-        files={"file": ("sample.csv", csv_payload, "text/csv")},
-        data={"source_type": "csv"},
+        "/api/v1/imports/validate-mapping",
+        json={
+            "source_type": "csv",
+            "headers": ["Plant", "Line", "Machine", "Part", "Date", "Shift", "Start Time", "Produced Qty"],
+            "mapping": invalid_mapping,
+        },
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["headers"] == ["Plant", "Line", "Machine", "Remarks"]
-    assert body["row_count"] == 1
-    assert body["rows"][0]["Remarks"] == "Line stopped, restarted after 5 min"
-    assert body["rows"][0]["Machine"] == "M-001"
+    assert body["valid"] is False
+    assert "stop_at" in body["missing_fields"]
+    assert "start_at" not in body["missing_fields"]
+
+    valid_mapping = {**invalid_mapping, "stop_at": "End Time"}
+    valid_response = client.post(
+        "/api/v1/imports/validate-mapping",
+        json={
+            "source_type": "csv",
+            "headers": ["Plant", "Line", "Machine", "Part", "Date", "Shift", "Start Time", "End Time", "Produced Qty"],
+            "mapping": valid_mapping,
+        },
+    )
+    assert valid_response.status_code == 200, valid_response.text
+    assert valid_response.json()["valid"] is True

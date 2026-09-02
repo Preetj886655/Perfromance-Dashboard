@@ -7,8 +7,14 @@ import { MasterDataPage } from "./pages/MasterDataPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { CreateAccountPage } from "./pages/CreateAccountPage";
+import "./styles/tokens.css";
+import "./styles/layout.css";
+import "./styles/components.css";
+import "./styles/animations.css";
+import "./styles/dashboard.css";
 import { ManufacturingDashboard } from "./pages/ManufacturingDashboard";
 import "./App.css";
+import "./styles/light-theme-overrides.css";
 
 type ViewKey = "dashboard" | "users" | "masters";
 type Screen = "login" | "forgot-password" | "reset-password" | "create-account" | "app";

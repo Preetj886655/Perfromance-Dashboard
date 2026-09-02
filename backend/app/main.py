@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, dashboard, health, imports, masters, production_records, users
+from app.api.routes import auth, dashboard, health, imports, manufacturing, masters, production_records, users
 from app.core.config import settings
 from app.db.bootstrap_admin import ensure_super_admin
 from app.db.session import get_session_factory
@@ -79,6 +79,7 @@ app.include_router(health.router, tags=["health"])
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(imports.router)
+app.include_router(manufacturing.router)
 app.include_router(masters.router)
 app.include_router(production_records.router)
 app.include_router(dashboard.router)

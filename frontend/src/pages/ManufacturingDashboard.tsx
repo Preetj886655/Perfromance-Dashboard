@@ -13,6 +13,10 @@ import { calculateManufacturingAnalysis } from "../data/calculations/manufacturi
 import type { DprRecord, DprValidationIssue } from "../data/normalization/normalizeDprData";
 import { parseDprWorkbookFile, type ParsedDprWorkbook } from "../data/parser/excelParser";
 import { loadDashboardDataset, saveDashboardDataset, type DashboardDatasetState } from "../data/state/dashboardDataStore";
+import { fetchManufacturingDataset, normalizeGoogleSheetRecords } from "../services/manufacturingApi";
+import { useManufacturingLivePolling } from "../hooks/useManufacturingLivePolling";
+import { LiveStatusIndicator, DataSourceIndicator, AutoRefreshToggle } from "../components/LiveStatusIndicator";
+import type { LiveSyncStatus } from "../hooks/useManufacturingLivePolling";
 
 type PageRoute =
   | "dashboard"
@@ -104,6 +108,20 @@ const defaultFilters: FilterState = {
   part: "All Parts",
   partNo: "All Part No.",
 };
+
+type DashboardSlideKey = "executive" | "production" | "quality" | "downtime" | "machine-line" | "oee" | "insights" | "data-quality" | "data-import";
+
+const dashboardSlides: Array<{ key: DashboardSlideKey; page: PageRoute; title: string; subtitle: string }> = [
+  { key: "executive", page: "dashboard", title: "Executive Overview", subtitle: "Plant-wide performance at a glance" },
+  { key: "production", page: "production", title: "Production Performance", subtitle: "Actual output, target attainment, and daily movement" },
+  { key: "quality", page: "quality", title: "Quality Analysis", subtitle: "Rejection patterns across the selected data" },
+  { key: "downtime", page: "production", title: "Downtime Analysis", subtitle: "Where recorded lost time is concentrated" },
+  { key: "machine-line", page: "production", title: "Machine / Line Performance", subtitle: "Compare the dimensions present in the uploaded data" },
+  { key: "oee", page: "oee", title: "OEE", subtitle: "Availability, performance, quality, and OEE when supported" },
+  { key: "insights", page: "dashboard", title: "Analytics & Insights", subtitle: "Evidence-based observations from the active filters" },
+  { key: "data-quality", page: "data-import", title: "Data Quality", subtitle: "Coverage, completeness, and source readiness" },
+  { key: "data-import", page: "data-import", title: "Data Import", subtitle: "Upload manufacturing data to generate analytics" },
+];
 
 const mockRecords: DprRecord[] = [
   {
@@ -356,6 +374,7 @@ function FilterBar({
   onReset: () => void;
   options: FilterOptions;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const makeOptions = (allLabel: string, values: string[]) => {
     if (!values.length) {
       return [allLabel, "Not available in dataset"];
@@ -378,14 +397,18 @@ function FilterBar({
   };
 
   return (
-    <section className="panel filter-panel">
-      <div className="section-header compact">
+    <section className={`panel filter-panel ${expanded ? "filter-panel--expanded" : ""}`}>
+      <div className="filter-panel__header">
         <div>
           <p className="eyebrow">Filters</p>
-          <h2>Operations Control</h2>
+          <h2>Operations Control <span>{expanded ? "" : "· dashboard remains visible"}</span></h2>
         </div>
+        <button type="button" className="filter-panel__toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls="operations-filters">
+          {expanded ? "Collapse" : "Expand"}<span aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
+        </button>
       </div>
 
+      <div id="operations-filters" className="filter-panel__body">
       <div className="filter-grid">
         {fieldList.map((field) => {
           const unavailable = field.options.length === 2 && field.options[1] === "Not available in dataset";
@@ -409,6 +432,7 @@ function FilterBar({
       <div className="filter-actions">
         <button type="button" className="btn btn--primary" onClick={onApply}>Apply Filters</button>
         <button type="button" className="btn btn--ghost" onClick={onReset}>Reset</button>
+      </div>
       </div>
     </section>
   );
@@ -600,18 +624,48 @@ function UploadValidation({ issues }: { issues: DprValidationIssue[] }) {
   );
 }
 
+function AnalyticsEmptyState({ title, message }: { title: string; message: string }) {
+  return <article className="analytics-empty-state"><strong>{title}</strong><span>{message}</span></article>;
+}
+
 export function ManufacturingDashboard() {
   const [activePage, setActivePage] = useState<PageRoute>(resolveHashRoute());
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [activeSlide, setActiveSlide] = useState<DashboardSlideKey | null>(() => {
+    const page = resolveHashRoute();
+    return page === "data-import" ? "data-import" : dashboardSlides.find((slide) => slide.page === page)?.key ?? null;
+  });
   const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
 
   const [dataset, setDataset] = useState<DashboardDatasetState | null>(() => loadDashboardDataset());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [sourceType, setSourceType] = useState<"excel" | "csv">("excel");
+  const [dataSourceMode, setDataSourceMode] = useState<"excel-csv" | "google-sheets">("excel-csv");
+  const [googleSheetUrl, setGoogleSheetUrl] = useState<string>("");
+  const [googleSheetsStatus, setGoogleSheetsStatus] = useState<{ connected: boolean; source: string; worksheet: string; recordCount: number; lastUpdated: string | null; error: string | null } | null>(null);
+  const [googleSheetsLoading, setGoogleSheetsLoading] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [previewResult, setPreviewResult] = useState<ParsedDprWorkbook | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Live polling and auto-refresh state
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+  const pollingInterval = 60000; // 60 seconds default
+  const [liveStatus, setLiveStatus] = useState<LiveSyncStatus>({
+    state: 'idle',
+    connected: false,
+    lastSync: null,
+    lastUpdate: null,
+    recordCount: 0,
+    recordsChanged: 0,
+    error: null,
+    updateAvailable: false,
+  });
+  const [currentSpreadsheetId, setCurrentSpreadsheetId] = useState<string>('');
 
   useEffect(() => {
     const sync = () => setActivePage(resolveHashRoute());
@@ -619,6 +673,62 @@ export function ManufacturingDashboard() {
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
   }, []);
+
+  // Set up live polling when Google Sheets is connected and auto-refresh is enabled
+  const { refresh: refreshData } = useManufacturingLivePolling({
+    spreadsheetId: currentSpreadsheetId,
+    worksheet: "Sheet1",
+    pollingInterval,
+    enabled: autoRefreshEnabled && currentSpreadsheetId.length > 0,
+    onDataUpdate: (response) => {
+      // When data changes, update the dashboard dataset
+      if (response.data && response.data.length > 0) {
+        const records = normalizeGoogleSheetRecords(response.data);
+        const updatedPayload: DashboardDatasetState = {
+          fileName: `Google Sheet ${currentSpreadsheetId}`,
+          sheetName: response.worksheet || "Sheet1",
+          uploadedAt: response.lastUpdated ? new Date(response.lastUpdated).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+          recordCount: response.recordCount,
+          records,
+        };
+        saveDashboardDataset(updatedPayload);
+        setDataset(updatedPayload);
+      }
+    },
+    onStatusChange: (newStatus) => {
+      setLiveStatus(newStatus);
+    },
+  });
+
+  const slideIndex = Math.max(0, dashboardSlides.findIndex((slide) => slide.key === activeSlide));
+
+  useEffect(() => {
+    const moveSlide = (event: KeyboardEvent) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      if (event.key === "Home" || event.key === "End") {
+        goToSlide(event.key === "Home" ? 0 : dashboardSlides.length - 1);
+        return;
+      }
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const nextIndex = Math.min(dashboardSlides.length - 1, Math.max(0, slideIndex + direction));
+      const nextSlide = dashboardSlides[nextIndex];
+      if (!nextSlide || nextSlide.key === activeSlide) return;
+      window.location.hash = `#/${nextSlide.page}`;
+      setActiveSlide(nextSlide.key);
+      setActivePage(nextSlide.page);
+    };
+    window.addEventListener("keydown", moveSlide);
+    return () => window.removeEventListener("keydown", moveSlide);
+  }, [activeSlide, slideIndex]);
+
+  const goToSlide = (index: number) => {
+    const nextSlide = dashboardSlides[index];
+    if (!nextSlide) return;
+    window.location.hash = `#/${nextSlide.page}`;
+    setActiveSlide(nextSlide.key);
+    setActivePage(nextSlide.page);
+  };
 
   const records = useMemo(() => (dataset?.records?.length ? dataset.records : mockRecords), [dataset]);
 
@@ -637,6 +747,7 @@ export function ManufacturingDashboard() {
     () => previewResult ? calculateManufacturingAnalysis(previewResult.records) : null,
     [previewResult]
   );
+  const filteredAnalysis = useMemo(() => calculateManufacturingAnalysis(filteredRecords), [filteredRecords]);
 
   const topDowntimeReason = downtime.byReason[0]?.key ?? null;
 
@@ -751,6 +862,28 @@ export function ManufacturingDashboard() {
     }
   };
 
+  const selectImportFile = (file: File | null) => {
+    if (!file) return;
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
+    const isExcel = /\.(xlsx?|xlsm)$/i.test(file.name);
+    if (!isCsv && !isExcel) {
+      setPreviewError("Unsupported file type. Choose a CSV, XLS, XLSX, or XLSM file.");
+      return;
+    }
+    setSelectedFile(file);
+    setSourceType(isCsv ? "csv" : "excel");
+    setPreviewResult(null);
+    setSelectedSheet("");
+    setPreviewError(null);
+  };
+
+  const removeImportFile = () => {
+    setSelectedFile(null);
+    setPreviewResult(null);
+    setSelectedSheet("");
+    setPreviewError(null);
+  };
+
   const handleSubmit = () => {
     if (!previewResult) {
       setPreviewError("Preview and validate the file before submitting.");
@@ -787,6 +920,67 @@ export function ManufacturingDashboard() {
       window.location.hash = "#/dashboard";
       setActivePage("dashboard");
     }, 700);
+  };
+
+  const handleGoogleSheetsConnect = async () => {
+    const rawUrl = googleSheetUrl.trim();
+    if (!rawUrl) {
+      setGoogleSheetsStatus({
+        connected: false,
+        source: "google-sheets",
+        worksheet: "Sheet1",
+        recordCount: 0,
+        lastUpdated: null,
+        error: "Enter a Google Sheets URL or spreadsheet ID first.",
+      });
+      return;
+    }
+
+    const match = rawUrl.match(/[a-zA-Z0-9-_]{10,}/);
+    const spreadsheetId = match ? match[0] : rawUrl;
+
+    setGoogleSheetsLoading(true);
+    setPreviewError(null);
+
+    try {
+      const response = await fetchManufacturingDataset(spreadsheetId, "Sheet1");
+      const records = normalizeGoogleSheetRecords(response.data ?? []);
+      const payload: DashboardDatasetState = {
+        fileName: `Google Sheet ${spreadsheetId}`,
+        sheetName: response.worksheet || "Sheet1",
+        uploadedAt: response.lastUpdated ? new Date(response.lastUpdated).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Not synced yet",
+        recordCount: response.recordCount,
+        records,
+      };
+
+      saveDashboardDataset(payload);
+      setDataset(payload);
+      setCurrentSpreadsheetId(spreadsheetId);
+      setGoogleSheetsStatus({
+        connected: response.connectionStatus === "connected" && !response.error,
+        source: response.source,
+        worksheet: response.worksheet || "Sheet1",
+        recordCount: response.recordCount,
+        lastUpdated: response.lastUpdated,
+        error: response.error,
+      });
+
+      if (response.connectionStatus === "connected") {
+        window.location.hash = "#/dashboard";
+        setActivePage("dashboard");
+      }
+    } catch (error) {
+      setGoogleSheetsStatus({
+        connected: false,
+        source: "google-sheets",
+        worksheet: "Sheet1",
+        recordCount: 0,
+        lastUpdated: null,
+        error: error instanceof Error ? error.message : "Unable to connect to Google Sheets.",
+      });
+    } finally {
+      setGoogleSheetsLoading(false);
+    }
   };
 
   const renderOverview = () => (
@@ -1051,32 +1245,84 @@ export function ManufacturingDashboard() {
 
     return (
       <SimplePage title="Data Import Center" subtitle="CSV / Excel Preview">
+        {/* Live Status and Data Source Indicators */}
+        {currentSpreadsheetId && (
+          <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
+            <DataSourceIndicator source="google-sheets" fileName={currentSpreadsheetId} />
+            <LiveStatusIndicator status={liveStatus} onRefresh={refreshData} showDetails={true} />
+            <AutoRefreshToggle enabled={autoRefreshEnabled} onChange={setAutoRefreshEnabled} interval={pollingInterval / 1000} />
+          </div>
+        )}
+
         <div className="upload-box">
+          <div className="import-steps" aria-label="Import workflow">
+            <div className={`import-step ${selectedFile ? "import-step--complete" : "import-step--active"}`}><span>01</span><strong>Upload</strong><small>Choose a source file</small></div>
+            <div className={`import-step ${previewResult ? "import-step--complete" : selectedFile ? "import-step--active" : ""}`}><span>02</span><strong>Inspect</strong><small>Review detected data</small></div>
+            <div className={`import-step ${dataset?.fileName === selectedFile?.name ? "import-step--complete" : previewResult ? "import-step--active" : ""}`}><span>03</span><strong>Analyse</strong><small>Update dashboard</small></div>
+          </div>
           <div className="form-grid">
             <label className="field">
               <span className="field__label">Source Type</span>
-              <select value="excel" disabled>
+              <select value={sourceType} onChange={(event) => setSourceType(event.target.value as "excel" | "csv")}>
                 <option value="excel">Excel (.xlsx / .xls)</option>
+                <option value="csv">CSV (.csv)</option>
               </select>
             </label>
-            <label className="field">
-              <span className="field__label">File</span>
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(event) => {
-                  setSelectedFile(event.target.files?.[0] ?? null);
-                  setPreviewResult(null);
-                  setSelectedSheet("");
-                  setPreviewError(null);
-                }}
-              />
-            </label>
+            <div className="field">
+              <span className="field__label">Data Source</span>
+              <select value={dataSourceMode} onChange={(event) => setDataSourceMode(event.target.value as "excel-csv" | "google-sheets")}>
+                <option value="excel-csv">Local Excel / CSV</option>
+                <option value="google-sheets">Google Sheets</option>
+              </select>
+            </div>
           </div>
+
+          {dataSourceMode === "google-sheets" ? (
+            <div className="panel panel--muted" style={{ marginTop: 16 }}>
+              <h3 style={{ marginTop: 0 }}>Google Sheets connection</h3>
+              <div className="form-grid">
+                <label className="field field--wide">
+                  <span className="field__label">Spreadsheet URL or ID</span>
+                  <input
+                    type="text"
+                    value={googleSheetUrl}
+                    onChange={(event) => setGoogleSheetUrl(event.target.value)}
+                    placeholder="Paste a Google Sheets link or spreadsheet ID"
+                  />
+                </label>
+              </div>
+              <div className="button-row">
+                <button type="button" className="btn btn--primary" onClick={handleGoogleSheetsConnect} disabled={googleSheetsLoading}>
+                  {googleSheetsLoading ? "Connecting..." : "Connect to Google Sheet"}
+                </button>
+              </div>
+              {googleSheetsStatus ? (
+                <p className={`field__hint ${googleSheetsStatus.connected ? "field__hint--success" : "field__hint--error"}`}>
+                  {googleSheetsStatus.connected
+                    ? `Connected to ${googleSheetsStatus.worksheet} • ${googleSheetsStatus.recordCount} records • last sync ${googleSheetsStatus.lastUpdated ?? "n/a"}`
+                    : googleSheetsStatus.error ?? "Google Sheets is unavailable."}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="field" style={{ marginTop: 16 }}>
+              <span className="field__label">File</span>
+              <label className={`upload-box__dropzone ${isDraggingFile ? "upload-box__dropzone--active" : ""}`} onDragOver={(event) => { event.preventDefault(); setIsDraggingFile(true); }} onDragLeave={() => setIsDraggingFile(false)} onDrop={(event) => { event.preventDefault(); setIsDraggingFile(false); selectImportFile(event.dataTransfer.files[0] ?? null); }}>
+                <strong>{isDraggingFile ? "Drop file to inspect" : "Drop Excel or CSV here"}</strong>
+                <span>or choose a file from your device</span>
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls,.xlsm"
+                  onChange={(event) => selectImportFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              {selectedFile ? <div className="selected-file"><div><strong>{selectedFile.name}</strong><span>{(selectedFile.size / 1024 / 1024).toFixed(2)} MB · {sourceType === "csv" ? "CSV" : "Excel workbook"}</span></div><button type="button" className="btn btn--ghost btn--small" onClick={removeImportFile}>Remove</button></div> : null}
+            </div>
+          )}
 
           <div className="button-row">
             <button type="button" className="btn btn--primary" onClick={handlePreview} disabled={!selectedFile || previewing}>
-              {previewing ? "Previewing..." : "Preview File"}
+              {previewing ? "Inspecting..." : "Preview File"}
             </button>
             <button
               type="button"
@@ -1084,7 +1330,7 @@ export function ManufacturingDashboard() {
               onClick={handleSubmit}
               disabled={!previewResult || submitting || previewResult.validationIssues.some((issue) => issue.level === "error")}
             >
-              {submitting ? "Processing Manufacturing Data..." : "Submit & Generate Dashboard"}
+              {submitting ? "Analysing manufacturing data..." : "Submit & Generate Dashboard"}
             </button>
           </div>
 
@@ -1290,6 +1536,35 @@ export function ManufacturingDashboard() {
     }
   };
 
+  const renderAnalyticsSlide = (slide: DashboardSlideKey) => {
+    if (slide === "executive") return renderOverview();
+    if (slide === "production") return <><div className="kpi-grid four-up">{overviewKpis.slice(0, 4).map((item) => <KpiCard key={item.label} item={item} />)}</div><article className="panel panel--chart"><div className="section-header compact"><div><p className="eyebrow">Output trend</p><h2>Production Trend</h2></div></div><ReactECharts option={{ backgroundColor: "transparent", tooltip: { trigger: "axis" }, xAxis: { type: "category", data: dailySeries.map((item) => item.date), axisLabel: { color: "#a9bbd3" } }, yAxis: { type: "value", axisLabel: { color: "#a9bbd3" } }, series: [{ type: "line", smooth: true, data: dailySeries.map((item) => item.actual), lineStyle: { width: 3, color: "#38bdf8" }, areaStyle: { color: "rgba(56,189,248,0.16)" } }] }} style={{ height: 300 }} /></article></>;
+    if (slide === "quality") return renderQuality();
+    if (slide === "oee") return renderOee();
+    if (slide === "downtime") {
+      return downtime.byReason.length ? (
+        <div className="analytics-slide-grid">
+          <div className="kpi-grid four-up">
+            <KpiCard item={{ label: "Total Downtime", value: `${toPlainNumber(downtime.totalDowntimeMinutes, 0)} min`, target: "Recorded downtime", variance: "Derived", trend: "flat", status: "Warning", sparkline: downtime.byReason.map((item) => item.minutes) }} />
+            <KpiCard item={{ label: "Downtime Reasons", value: toPlainNumber(downtime.byReason.length, 0), target: "Detected categories", variance: "Derived", trend: "flat", status: "Good", sparkline: downtime.byReason.map((item) => item.minutes) }} />
+          </div>
+          <article className="panel panel--chart"><div className="section-header compact"><div><p className="eyebrow">Loss time</p><h2>Downtime by Reason</h2></div></div><ReactECharts option={{ backgroundColor: "transparent", tooltip: { trigger: "axis" }, xAxis: { type: "category", data: downtime.byReason.slice(0, 10).map((item) => item.key), axisLabel: { color: "#a9bbd3", interval: 0, rotate: 24 } }, yAxis: { type: "value", axisLabel: { color: "#a9bbd3" } }, series: [{ type: "bar", data: downtime.byReason.slice(0, 10).map((item) => item.minutes), itemStyle: { color: "#fbbf24" } }] }} style={{ height: 340 }} /></article>
+        </div>
+      ) : <AnalyticsEmptyState title="Downtime analysis unavailable" message="No downtime values were detected in the active dataset or filters." />;
+    }
+    if (slide === "machine-line") {
+      return filteredAnalysis.productionByMachine.length || filteredAnalysis.productionByLine.length ? (
+        <div className="panel-grid two-up">
+          {filteredAnalysis.productionByMachine.length ? <article className="panel panel--chart"><div className="section-header compact"><div><p className="eyebrow">Dimension comparison</p><h2>Production by Machine</h2></div></div><ReactECharts option={{ backgroundColor: "transparent", tooltip: { trigger: "axis" }, xAxis: { type: "category", data: filteredAnalysis.productionByMachine.slice(0, 10).map((item) => item.key), axisLabel: { color: "#a9bbd3", rotate: 20 } }, yAxis: { type: "value", axisLabel: { color: "#a9bbd3" } }, series: [{ type: "bar", data: filteredAnalysis.productionByMachine.slice(0, 10).map((item) => item.value), itemStyle: { color: "#67e8f9" } }] }} style={{ height: 300 }} /></article> : null}
+          {filteredAnalysis.productionByLine.length ? <article className="panel panel--chart"><div className="section-header compact"><div><p className="eyebrow">Dimension comparison</p><h2>Production by Line</h2></div></div><ReactECharts option={{ backgroundColor: "transparent", tooltip: { trigger: "axis" }, xAxis: { type: "category", data: filteredAnalysis.productionByLine.map((item) => item.key), axisLabel: { color: "#a9bbd3", rotate: 20 } }, yAxis: { type: "value", axisLabel: { color: "#a9bbd3" } }, series: [{ type: "bar", data: filteredAnalysis.productionByLine.map((item) => item.value), itemStyle: { color: "#34d399" } }] }} style={{ height: 300 }} /></article> : null}
+        </div>
+      ) : <AnalyticsEmptyState title="Machine and line analysis unavailable" message="The uploaded data does not include machine or line production values." />;
+    }
+    if (slide === "insights") return <div className="panel-grid two-up"><article className="panel"><div className="section-header compact"><div><p className="eyebrow">Signal review</p><h2>Automated Insights</h2></div></div><ul className="insight-list">{insights.ai.map((line) => <li key={line}>{line}</li>)}</ul></article><article className="panel"><div className="section-header compact"><div><p className="eyebrow">Uploaded data</p><h2>Analysis Signals</h2></div></div><ul className="mini-list">{filteredAnalysis.insights.map((line) => <li key={line}>{line}</li>)}</ul></article></div>;
+    if (slide === "data-import") return renderImport();
+    return previewResult ? <div className="panel-grid two-up"><article className="panel"><div className="section-header compact"><div><p className="eyebrow">Source integrity</p><h2>Data Quality</h2></div></div><div className="summary-grid"><div><span className="field__label">Records</span><strong>{toPlainNumber(previewResult.rowCount, 0)}</strong></div><div><span className="field__label">Columns</span><strong>{previewResult.columnCount}</strong></div><div><span className="field__label">Missing cells</span><strong>{previewResult.dataQuality.missingPercent.toFixed(1)}%</strong></div><div><span className="field__label">Duplicate rows</span><strong>{previewResult.dataQuality.duplicateRows}</strong></div></div></article><article className="panel panel--muted"><div className="section-header compact"><div><p className="eyebrow">Detected capabilities</p><h2>Available Data</h2></div></div><p className="field__hint">{previewResult.availableFields.map((field) => `✓ ${field}`).join("   ")}</p><p className="field__hint">{previewResult.analysisMode === "oee" ? "✓ OEE inputs available" : "⚠ OEE unavailable for this dataset"}</p></article></div> : <AnalyticsEmptyState title="Data quality is waiting for a dataset" message="Preview a CSV or Excel file to inspect records, fields, and completeness." />;
+  };
+
   return (
     <div className="factory-layout">
       <aside className="sidebar">
@@ -1303,77 +1578,23 @@ export function ManufacturingDashboard() {
 
 <div
   className="sidebar__owner"
-  style={{
-    position: "relative",
-    overflow: "hidden",
-    minHeight: "210px",
-    padding: "14px 12px 12px",
-    borderRadius: "16px",
-    background: "#102532",
-    border: "1px solid rgba(255,255,255,0.12)",
-    textAlign: "center",
-  }}
 >
   <img
     src="/Patil%20Sir%20Picture.jpg"
     alt="Dr. L. S. Patil"
-    style={{
-      display: "block",
-      position: "relative",
-      width: "170px",
-      height: "170px",
-      margin: "0 auto 8px",
-      objectFit: "cover",
-      objectPosition: "center",
-      borderRadius: "50%",
-      opacity: 1,
-      filter: "none",
-      zIndex: 1,
-      pointerEvents: "none",
-      border: "2px solid rgba(255,255,255,0.15)",
-    }}
+    className="sidebar__owner-photo"
   />
 
-  <div
-    style={{
-      position: "relative",
-      zIndex: 2,
-      width: "100%",
-    }}
-  >
-    <span
-      style={{
-        display: "block",
-        fontSize: "11px",
-        color: "#9db4c4",
-        letterSpacing: "0.8px",
-        marginBottom: "4px",
-      }}
-    >
+  <div className="sidebar__owner-copy">
+    <span>
       OWNER
     </span>
 
-    <strong
-      style={{
-        display: "block",
-        fontSize: "17px",
-        lineHeight: "1.25",
-        color: "#f1f7fb",
-        marginBottom: "4px",
-        whiteSpace: "nowrap",
-      }}
-    >
+    <strong>
       Dr. L. S. Patil
     </strong>
 
-    <small
-      style={{
-        display: "block",
-        fontSize: "11px",
-        lineHeight: "1.4",
-        color: "#d3e0e8",
-      }}
-    >
+    <small>
       (Lingaraj Shantalingappa Patil)
     </small>
   </div>
@@ -1384,9 +1605,11 @@ export function ManufacturingDashboard() {
               key={item.key}
               type="button"
               className={`nav-item ${activePage === item.key ? "nav-item--active" : ""}`}
+              title={item.label}
               onClick={() => {
                 window.location.hash = `#/${item.key}`;
                 setActivePage(item.key);
+                setActiveSlide(item.key === "data-import" ? "data-import" : dashboardSlides.find((slide) => slide.page === item.key)?.key ?? null);
               }}
             >
               <span className="nav-item__icon">{item.icon}</span>
@@ -1400,7 +1623,7 @@ export function ManufacturingDashboard() {
         <header className="topbar">
           <div>
             <p className="eyebrow">Patil Group</p>
-            <h1>{routeToTitle[activePage]}</h1>
+            <h1>{dashboardSlides.find((slide) => slide.key === activeSlide)?.title ?? routeToTitle[activePage]}</h1>
           </div>
 
           <div className="topbar__right">
@@ -1442,7 +1665,48 @@ export function ManufacturingDashboard() {
           <span>Records: {toPlainNumber(sourceRecords, 0)}</span>
         </div>
 
-        {renderPageContent()}
+        <section className={`dashboard-slide ${activeSlide ? "dashboard-slide--active" : ""}`} aria-label={activeSlide ? "Dashboard slides" : undefined} onTouchStart={(event) => setTouchStartX(event.touches[0]?.clientX ?? null)} onTouchEnd={(event) => {
+          if (touchStartX === null || !activeSlide) return;
+          const delta = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
+          setTouchStartX(null);
+          if (Math.abs(delta) > 48) goToSlide(delta < 0 ? Math.min(dashboardSlides.length - 1, slideIndex + 1) : Math.max(0, slideIndex - 1));
+        }}>
+          {activeSlide ? <div className="dashboard-slide__heading"><div><p className="eyebrow">Analytics presentation</p><h2>{dashboardSlides.find((slide) => slide.key === activeSlide)?.title}</h2><p>{dashboardSlides.find((slide) => slide.key === activeSlide)?.subtitle}</p></div><span className="dashboard-slide__count">{String(slideIndex + 1).padStart(2, "0")} / {String(dashboardSlides.length).padStart(2, "0")}</span></div> : null}
+          <button
+            type="button"
+            className="dashboard-slide__arrow dashboard-slide__arrow--previous"
+            aria-label="Previous dashboard slide"
+            onClick={() => goToSlide(Math.max(0, slideIndex - 1))}
+            disabled={!activeSlide || slideIndex === 0}
+          >
+            <span className="dashboard-slide__chevron dashboard-slide__chevron--left" aria-hidden="true" />
+          </button>
+
+          <div className="dashboard-slide__content">{activeSlide ? renderAnalyticsSlide(activeSlide) : renderPageContent()}</div>
+
+          <button
+            type="button"
+            className="dashboard-slide__arrow dashboard-slide__arrow--next"
+            aria-label="Next dashboard slide"
+            onClick={() => goToSlide(Math.min(dashboardSlides.length - 1, slideIndex + 1))}
+            disabled={!activeSlide || slideIndex === dashboardSlides.length - 1}
+          >
+            <span className="dashboard-slide__chevron dashboard-slide__chevron--right" aria-hidden="true" />
+          </button>
+
+          <nav className="dashboard-slide__dots" aria-label="Dashboard slide navigation">
+            {dashboardSlides.map((slide, index) => (
+              <button
+                key={slide.key}
+                type="button"
+                className={`dashboard-slide__dot ${activeSlide === slide.key ? "dashboard-slide__dot--active" : ""}`}
+                aria-label={`Show ${slide.title}`}
+                aria-current={activeSlide === slide.key ? "page" : undefined}
+                onClick={() => goToSlide(index)}
+              />
+            ))}
+          </nav>
+        </section>
       </main>
     </div>
   );

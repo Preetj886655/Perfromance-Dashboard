@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     auth_algorithm: str = "HS256"
     auth_access_token_expire_minutes: int = 60
 
+    google_sheets_spreadsheet_id: str = ""
+    google_sheets_default_worksheet: str = "Sheet1"
+    google_sheets_cache_ttl_seconds: int = 45
+
     # PostgreSQL — credentials come from env; never commit real secrets
     # Prefer 127.0.0.1 over localhost so clients do not resolve to a different
     # stack via IPv6 when both a host Postgres and Docker publish listeners.

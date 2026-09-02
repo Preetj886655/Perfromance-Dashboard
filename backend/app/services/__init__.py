@@ -1,8 +1,14 @@
 ﻿"""Application service layer (pure calculators and orchestration)."""
 
+from app.services.flexible_workbook_ingestion import (
+    ingest_flexible_csv,
+    ingest_flexible_workbook,
+)
 from app.services.import_worker import prepare_dpr_oee_import_job, run_import_job
 
 __all__ = [
     "prepare_dpr_oee_import_job",
     "run_import_job",
+    "ingest_flexible_csv",
+    "ingest_flexible_workbook",
 ]

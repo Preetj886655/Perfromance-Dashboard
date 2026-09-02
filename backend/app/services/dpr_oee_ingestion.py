@@ -1,4 +1,7 @@
-"""DPR_OEE Excel ingestion (service layer only).
+"""DPR_OEE Excel ingestion — LEGACY SERVICE (for backward compatibility only).
+
+RECOMMENDATION: Use app.services.flexible_workbook_ingestion for new imports.
+This service is maintained only for existing imports using rigid DPR_OEE template.
 
 Pipeline
 --------

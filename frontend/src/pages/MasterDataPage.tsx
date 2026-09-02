@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiRequestError } from "../api/client";
 import {
-  commitDprOeeImport,
   createColumnMappingTemplate,
   createDataSource,
   createLine,
@@ -17,9 +16,9 @@ import {
   listMachineTypes,
   listPlants,
   previewImportFile,
+  validateImportMapping,
   type ColumnMappingTemplateOption,
   type DataSourceOption,
-  type DprOeeImportResult,
   type LineOption,
   type MachineOption,
   type MachineStatusOption,
@@ -488,10 +487,7 @@ function IngestionConfigPanel({
 
   return (
     <form onSubmit={handleSubmit} className="panel form-section">
-      <div>
-        <h3>Google Form / Sheet Source</h3>
-        <p className="section-copy">Connect a production data collection source.</p>
-      </div>
+      <h3>Google Form / Sheet Source</h3>
       <div className="form-grid">
         <label className="field">
           <span className="field__label">Source Code</span>
@@ -538,10 +534,41 @@ function MappingTemplatePanel({ onSaved }: { onSaved: () => void }) {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationHint, setValidationHint] = useState<string | null>(null);
+
+  const validateCurrentMapping = useCallback(async () => {
+    const headers = Object.values(mapping).filter((value) => value && value.trim().length > 0);
+    if (!headers.length) {
+      setValidationHint("Map at least one source column before saving.");
+      return false;
+    }
+
+    try {
+      const result = await validateImportMapping({
+        source_type: sourceType,
+        headers: headers,
+        mapping,
+      });
+      if (!result.valid) {
+        setValidationHint(`Missing required fields: ${result.missing_fields.join(", ")}`);
+        return false;
+      }
+      setValidationHint("Mapping is valid for the required production fields.");
+      return true;
+    } catch (err) {
+      setValidationHint(errMessage(err));
+      return false;
+    }
+  }, [mapping, sourceType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const isValid = await validateCurrentMapping();
+    if (!isValid) {
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -590,6 +617,9 @@ function MappingTemplatePanel({ onSaved }: { onSaved: () => void }) {
           </label>
         ))}
       </div>
+      {validationHint && (
+        <p className={validationHint.includes("Missing required") ? "field__hint field__hint--error" : "field__hint"}>{validationHint}</p>
+      )}
       {error && <p className="field__hint field__hint--error">{error}</p>}
       <button type="submit" className="btn btn--primary" disabled={isLoading}>
         {isLoading ? "Saving..." : "Save Mapping"}
@@ -598,22 +628,12 @@ function MappingTemplatePanel({ onSaved }: { onSaved: () => void }) {
   );
 }
 
-type PreviewPanelProps = {
-  plants: PlantOption[];
-};
-
-function PreviewPanel({ plants }: PreviewPanelProps) {
+function PreviewPanel() {
   const [sourceType, setSourceType] = useState("csv");
   const [file, setFile] = useState<File | null>(null);
-  const [plantId, setPlantId] = useState("");
   const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string, unknown>[]; row_count: number } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isCommitting, setIsCommitting] = useState(false);
-  const [commitError, setCommitError] = useState<string | null>(null);
-  const [commitResult, setCommitResult] = useState<DprOeeImportResult | null>(null);
-
-  const canCommit = sourceType === "excel" || sourceType === "csv";
 
   const handlePreview = async () => {
     if (!file) {
@@ -621,8 +641,6 @@ function PreviewPanel({ plants }: PreviewPanelProps) {
       return;
     }
     setError(null);
-    setCommitResult(null);
-    setCommitError(null);
     setIsLoading(true);
     try {
       const result = await previewImportFile(file, sourceType);
@@ -634,34 +652,13 @@ function PreviewPanel({ plants }: PreviewPanelProps) {
     }
   };
 
-  const handleCommit = async () => {
-    if (!file) {
-      setCommitError("Choose a CSV or Excel file first.");
-      return;
-    }
-    if (!plantId) {
-      setCommitError("Select a plant first.");
-      return;
-    }
-    setCommitError(null);
-    setIsCommitting(true);
-    try {
-      const result = await commitDprOeeImport(file, plantId, sourceType as "excel" | "csv");
-      setCommitResult(result);
-    } catch (err) {
-      setCommitError(errMessage(err));
-    } finally {
-      setIsCommitting(false);
-    }
-  };
-
   return (
     <div className="panel form-section">
       <h3>CSV / Excel Preview</h3>
       <div className="form-grid">
         <label className="field">
           <span className="field__label">Source Type</span>
-          <select value={sourceType} onChange={(e) => { setSourceType(e.target.value); setCommitResult(null); setCommitError(null); }}>
+          <select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
             <option value="csv">csv</option>
             <option value="excel">excel</option>
             <option value="form">form</option>
@@ -670,7 +667,7 @@ function PreviewPanel({ plants }: PreviewPanelProps) {
         </label>
         <label className="field">
           <span className="field__label">File</span>
-          <input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setCommitResult(null); setCommitError(null); }} />
+          <input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
       </div>
       <button type="button" className="btn btn--primary" onClick={handlePreview} disabled={isLoading || !file}>
@@ -701,55 +698,6 @@ function PreviewPanel({ plants }: PreviewPanelProps) {
             </table>
           </div>
         </div>
-      )}
-
-      {canCommit ? (
-        <div className="panel panel--muted" style={{ marginTop: "1rem" }}>
-          <h3 style={{ marginTop: 0 }}>Commit to Master Data</h3>
-          <p className="field__hint">
-            Expects the DPR_OEE template layout (headers row 3, data from row 5) — the same file
-            {sourceType === "csv" ? " saved as CSV." : "."}
-          </p>
-          <div className="form-grid">
-            <label className="field">
-              <span className="field__label">Plant</span>
-              <select value={plantId} onChange={(e) => setPlantId(e.target.value)}>
-                <option value="">Select a plant…</option>
-                {plants.map((plant) => (
-                  <option key={plant.id} value={plant.id}>
-                    {plant.name} ({plant.code})
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={handleCommit}
-            disabled={isCommitting || !file || !plantId}
-          >
-            {isCommitting ? "Committing..." : `Commit ${sourceType.toUpperCase()}`}
-          </button>
-          {commitError && <p className="field__hint field__hint--error">{commitError}</p>}
-          {commitResult && (
-            <div
-              className={`panel ${commitResult.status === "committed" ? "panel--success" : "panel--error"}`}
-              style={{ marginTop: "0.75rem" }}
-            >
-              <p style={{ margin: 0 }}>
-                <strong>{commitResult.status}</strong> — {commitResult.success_count}/{commitResult.total_rows} rows
-                committed, {commitResult.error_count} error(s)
-              </p>
-              {commitResult.message && <p className="field__hint" style={{ margin: "0.35rem 0 0" }}>{commitResult.message}</p>}
-            </div>
-          )}
-        </div>
-      ) : (
-        <p className="field__hint">
-          Commit is only available for excel/csv source types (this project's real Master Data
-          commit path — form/sheets sync is a later phase).
-        </p>
       )}
     </div>
   );
@@ -864,17 +812,9 @@ export function MasterDataPage() {
   return (
     <div className="shell shell--wide">
       <div className="page-header">
-        <div>
-          <p className="eyebrow">Operations data</p>
-          <h1>Master Data</h1>
-        </div>
-        <div className="page-header__actions">
-          <button type="button" className="btn btn--ghost">Import</button>
-          <button type="button" className="btn btn--ghost">Export</button>
-          <button type="button" className="btn btn--primary">Add New</button>
-        </div>
+        <h1>Master Data</h1>
+        <p>Manage plants, lines, machines, types, and statuses.</p>
       </div>
-      <p className="page-header__subtitle">Manage plants, lines, machines, types, statuses and production configuration.</p>
 
       {error && (
         <div className="panel panel--error">
@@ -892,10 +832,9 @@ export function MasterDataPage() {
       <div className="master-data-grid">
         <section className="master-data-section">
           <h2>Production Ingestion</h2>
-          <p className="section-copy">Connect production data sources and configure how manufacturing data enters the analytics platform.</p>
           <IngestionConfigPanel onSaved={async () => { await refreshDataSources(); }} />
           <MappingTemplatePanel onSaved={async () => { await refreshMappings(); }} />
-          <PreviewPanel plants={plants} />
+          <PreviewPanel />
           {dataSources.length > 0 ? (
             <div className="panel table-section">
               <h3>Stored Sources ({dataSources.length})</h3>
