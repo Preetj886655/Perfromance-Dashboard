@@ -204,7 +204,11 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
   useEffect(() => {
     if (!enabled || !spreadsheetId) return;
 
+    // Poll status immediately
     pollStatus();
+
+    // Fetch data immediately on mount/change (not just on interval)
+    fetchAndDetectChanges();
 
     const interval = setInterval(() => {
       fetchAndDetectChanges();

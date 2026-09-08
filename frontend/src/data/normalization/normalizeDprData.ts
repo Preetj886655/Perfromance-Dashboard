@@ -1,3 +1,6 @@
+import { mapToWorkCenter } from "./workCenterMapping";
+import { normalizeMaterial } from "./lineShiftMaterial";
+
 export type DprRawRow = Record<string, unknown>;
 
 export type DprRecord = {
@@ -40,6 +43,12 @@ export type DprRecord = {
   qualityRatio?: number;
   sourceOeeRatio?: number;
   remarks?: string;
+  /** Raw source Stage value (e.g. "Cut Bar", "Clip", "Turned Bar") */
+  rawStage?: string;
+  /** Normalized business Work Center derived from Stage/Machine mapping */
+  workCenter?: string;
+  /** Business Material label derived from Part (e.g. "MK-III", "MK-V") */
+  material?: string;
   customColumns: Record<string, unknown>;
   raw: DprRawRow;
 };
@@ -72,6 +81,9 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
   const date = toIsoDate(row["Date"]);
   const machineName = toText(row["Machine Name"]);
   const machineNo = toText(row["Machine No."]);
+  const rawStage = toText(row["Stage"]);
+  const rawMaterialPart = toText(row["Part"]) ?? toText(row["Part Name"]);
+  const materialName = toText(row["Material Name"]);
   const actualProductionQty = toNumber(row["Actual Production Qty."]);
 
   const hasSignal = Boolean(date) || Boolean(machineName) || Boolean(machineNo) || Boolean(row["Line"])
@@ -102,7 +114,7 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
     shift: toText(row["Shift"]) ?? undefined,
     lineName: toText(row["Line"]) ?? undefined,
     machineName: machineName ?? undefined,
-    materialName: toText(row["Material Name"]) ?? undefined,
+    materialName: materialName ?? undefined,
     machineNo: machineNo ?? undefined,
     startTime: toTimeText(row["Start Time"]),
     stopTime: toTimeText(row["Stop Time"]),
@@ -134,6 +146,9 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
     qualityRatio: toRatio(row["Quantity Ratio (Q)"]) ?? undefined,
     sourceOeeRatio: toRatio(row["OEE (A*P*Q)"]) ?? undefined,
     remarks: toText(row["Any Other Remarks"]) ?? toText(row["Description"]) ?? undefined,
+    rawStage: rawStage ?? undefined,
+    workCenter: mapToWorkCenter(machineName ?? machineNo ?? rawStage ?? undefined),
+    material: materialName ?? normalizeMaterial(rawMaterialPart ?? undefined),
     customColumns,
     raw: row,
   };
@@ -144,7 +159,11 @@ const KNOWN_HEADERS = new Set([
   "Date",
   "Production Hour",
   "Shift",
+  "Line",
+  "Stage",
+  "Part",
   "Machine Name",
+  "Machine",
   "Material Name",
   "Machine No.",
   "Start Time",
@@ -251,6 +270,20 @@ function toIsoDate(value: unknown): string | null {
 
   const raw = String(value).trim();
   if (!raw) return null;
+
+  // Manufacturing exports commonly use dd-mm-yyyy / dd/mm/yyyy / dd.mm.yyyy
+  // (e.g. "31-08-2024"). Parse these explicitly before falling back to the
+  // browser parser so the canonical date is always ISO yyyy-mm-dd.
+  const ddmmyyyy = raw.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (ddmmyyyy) {
+    const day = Number(ddmmyyyy[1]);
+    const month = Number(ddmmyyyy[2]);
+    const year = Number(ddmmyyyy[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+  }
+
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return raw;
   return parsed.toISOString().slice(0, 10);

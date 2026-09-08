@@ -17,6 +17,10 @@ body {
   min-height: 100vh;
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
+  /* Single normal document scrollbar. Prevent accidental horizontal page
+     overflow while letting vertical content scroll naturally. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 #root {
@@ -491,7 +495,7 @@ body {
 .dashboard-shell {
   padding: 0.85rem 1.1rem 1.1rem;
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 .dashboard-slide {
   position: relative;
@@ -677,10 +681,33 @@ body {
   margin-bottom: 0.7rem;
 }
 
+.topbar__branding {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.topbar__brand-mark {
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.55rem;
+  background: linear-gradient(135deg, var(--color-primary, #6366f1), var(--color-secondary, #0ea5e9));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
 .topbar h1 {
   margin: 0.2rem 0 0;
-  font-size: clamp(1.7rem, 2vw, 2.5rem);
+  font-size: clamp(1.5rem, 2vw, 2.2rem);
   letter-spacing: -0.04em;
+  line-height: 1.1;
 }
 
 .topbar__right {
@@ -709,8 +736,22 @@ body {
   font-weight: 700;
 }
 
+.status-block--live {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--green);
+}
+
+.status-block--stale {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--amber, #fbbf24);
+}
+
 .status-dot--live {
   animation: live-pulse 2.4s ease-in-out infinite;
+}
+
+.status-dot--stale {
+  animation: none;
 }
 
 .status-dot {
@@ -723,6 +764,11 @@ body {
 .status-dot--live {
   background: var(--green);
   box-shadow: 0 0 10px rgba(52, 211, 153, 0.9);
+}
+
+.status-dot--stale {
+  background: var(--amber, #fbbf24);
+  box-shadow: none;
 }
 
 .user-badge {
@@ -796,7 +842,7 @@ body {
 
 .filter-panel__body {
   display: grid;
-  grid-template-rows: 0fr;
+  grid-template-rows: 0fr 0fr;
   opacity: 0;
   transition: grid-template-rows 260ms ease, opacity 220ms ease, margin-top 260ms ease;
 }
@@ -807,15 +853,52 @@ body {
 }
 
 .filter-panel--expanded .filter-panel__body {
-  grid-template-rows: 1fr;
+  grid-template-rows: 1fr auto;
   opacity: 1;
   margin-top: 0.8rem;
 }
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.8rem;
+}
+
+/* Date Range occupies two grid columns so both date inputs stay usable. */
+.field--date-range {
+  grid-column: span 2;
+}
+
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.date-range input {
+  flex: 1;
+  min-width: 0;
+}
+
+.date-range__separator {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.field__hint--error {
+  color: var(--red, #f87171);
+}
+
+.filter-empty-banner {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber, #fbbf24);
+  background: rgba(15, 35, 47, 0.85);
+  color: var(--text-soft);
+  border-radius: 0.85rem;
+  margin-bottom: 1rem;
 }
 
 .field {
@@ -882,6 +965,24 @@ body {
 
 .data-status--live {
   color: var(--green);
+}
+
+.data-status--stale {
+  color: var(--amber, #fbbf24);
+}
+
+.data-status--idle {
+  color: var(--muted, #8899aa);
+}
+
+.data-status-error {
+  color: var(--red, #f87171);
+  font-size: 0.85rem;
+}
+
+.data-status-warning {
+  color: var(--amber, #fbbf24);
+  font-size: 0.85rem;
 }
 
 .top-summary-row {
@@ -1651,6 +1752,10 @@ body {
   .gauge-grid,
   .gauge-grid.oversized {
     grid-template-columns: 1fr;
+  }
+
+  .field--date-range {
+    grid-column: auto;
   }
 
   .scorecard-row {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 
 import { calculateDowntimeAnalysis } from "../data/calculations/downtimeAnalysis";
@@ -11,12 +11,70 @@ import { calculateProductionKpis } from "../data/calculations/productionKpis";
 import { calculateQualityAnalysis } from "../data/calculations/qualityAnalysis";
 import { calculateManufacturingAnalysis } from "../data/calculations/manufacturingAnalysis";
 import type { DprRecord, DprValidationIssue } from "../data/normalization/normalizeDprData";
+import { BUSINESS_WORK_CENTERS } from "../data/normalization/workCenterMapping";
+import {
+  BUSINESS_LINES,
+  BUSINESS_MATERIALS,
+  BUSINESS_SHIFTS,
+  normalizeLine,
+  normalizeShift,
+} from "../data/normalization/lineShiftMaterial";
+import { useAuth } from "../auth/useAuth";
+import { analyzeBusinessDataQuality } from "../data/analysis/businessDataQuality";
 import { parseDprWorkbookFile, type ParsedDprWorkbook } from "../data/parser/excelParser";
-import { loadDashboardDataset, saveDashboardDataset, type DashboardDatasetState } from "../data/state/dashboardDataStore";
-import { fetchManufacturingDataset, normalizeGoogleSheetRecords } from "../services/manufacturingApi";
+import { saveDashboardDataset, type DashboardDatasetState } from "../data/state/dashboardDataStore";
+import { fetchManufacturingDataset, fetchManufacturingStatus, normalizeGoogleSheetRecords } from "../services/manufacturingApi";
 import { useManufacturingLivePolling } from "../hooks/useManufacturingLivePolling";
 import { LiveStatusIndicator, DataSourceIndicator, AutoRefreshToggle } from "../components/LiveStatusIndicator";
 import type { LiveSyncStatus } from "../hooks/useManufacturingLivePolling";
+import { DashboardCarousel, type CarouselSlide } from "../components/dashboard/DashboardCarousel";
+import {
+  ExecutiveOverviewSlide,
+  ProductionSlide,
+  ProductionLossSlide,
+  DowntimeCommandCenterSlide,
+  DowntimeRootCauseSlide,
+  QualitySlide,
+  LinePerformanceSlide,
+  ShiftPerformanceSlide,
+  MaterialPartSlide,
+  StageAnalyticsSlide,
+  WorkCenterAnalyticsSlide,
+  MachineAnalyticsSlide,
+  RelationshipSlide,
+  ManagementInsightsSlide,
+  useDashboardAnalytics,
+} from "../components/dashboard/slides";
+import { ImportedDatasetSection } from "../components/dashboard/ImportedDatasetSection";
+import { LiveGoogleSheetsSection } from "../components/dashboard/LiveGoogleSheetsSection";
+
+// ===== DATA SOURCE TYPES =====
+// Strict separation: imported vs live Google Sheets
+
+/** Live Google Sheets dataset state */
+type LiveDatasetState = {
+  records: DprRecord[];
+  spreadsheetId: string;
+  worksheet: string;
+  recordCount: number;
+  lastUpdated: string | null;
+  connectionStatus: "connected" | "offline" | "error";
+  error: string | null;
+};
+
+/** Imported dataset state (Excel/CSV/Google Sheets via Data Import ONLY) */
+type ImportedDatasetState = {
+  records: DprRecord[];
+  fileName: string;
+  sheetName: string;
+  recordCount: number;
+  uploadedAt: string;
+  sourceType: "excel" | "csv" | "google-sheets";
+  /** Present when the source is a Google Sheet connected through Data Import. */
+  spreadsheetId?: string;
+  worksheet?: string;
+  lastUpdated?: string | null;
+};
 
 type PageRoute =
   | "dashboard"
@@ -38,14 +96,15 @@ type PageRoute =
   | "actions"
   | "settings";
 
-type FilterState = {
-  date: string;
+export type FilterState = {
+  /** Inclusive start date (ISO yyyy-mm-dd). Empty string = no lower bound. */
+  dateFrom: string;
+  /** Inclusive end date (ISO yyyy-mm-dd). Empty string = no upper bound. */
+  dateTo: string;
+  line: string;
   shift: string;
-  machine: string;
-  machineNo: string;
+  workCenter: string;
   material: string;
-  part: string;
-  partNo: string;
 };
 
 type KpiPoint = {
@@ -100,13 +159,12 @@ const routeToTitle: Record<PageRoute, string> = {
 };
 
 const defaultFilters: FilterState = {
-  date: "All Dates",
+  dateFrom: "",
+  dateTo: "",
+  line: "All Lines",
   shift: "All Shifts",
-  machine: "All Machines",
-  machineNo: "All Machine No.",
+  workCenter: "All Work Centers",
   material: "All Materials",
-  part: "All Parts",
-  partNo: "All Part No.",
 };
 
 type DashboardSlideKey = "executive" | "production" | "quality" | "downtime" | "machine-line" | "oee" | "insights" | "data-quality" | "data-import";
@@ -129,10 +187,11 @@ const mockRecords: DprRecord[] = [
     serialNo: 1,
     date: "2026-08-14",
     shift: "A",
-    machineName: "ERC",
-    machineNo: "M001",
-    materialName: "PP Natural",
-    partName: "RGP",
+    lineName: "ERC",
+    machineName: "Autocopying-2",
+    workCenter: "Autocopy",
+    material: "MK-III",
+    partName: "MK3",
     partNo: "PD001",
     productionHour: 12,
     targetQtyPerHour: 50,
@@ -161,10 +220,11 @@ const mockRecords: DprRecord[] = [
     serialNo: 2,
     date: "2026-08-14",
     shift: "B",
-    machineName: "SKL",
-    machineNo: "M002",
-    materialName: "PP Black",
-    partName: "Cap",
+    lineName: "SKL",
+    machineName: "SBL",
+    workCenter: "Unmapped",
+    material: undefined,
+    partName: "SKL12",
     partNo: "PD006",
     productionHour: 12,
     targetQtyPerHour: 650,
@@ -193,10 +253,11 @@ const mockRecords: DprRecord[] = [
     serialNo: 3,
     date: "2026-08-15",
     shift: "C",
-    machineName: "Injection Moulding",
-    machineNo: "M003",
-    materialName: "PP Natural",
-    partName: "Base",
+    lineName: "Injection Moulding",
+    machineName: "W-CNC 1",
+    workCenter: "Unmapped",
+    material: "MK-V",
+    partName: "MK5",
     partNo: "PD005",
     productionHour: 12,
     targetQtyPerHour: 210,
@@ -248,6 +309,7 @@ function resolveHashRoute(): PageRoute {
     "#/5s": "5s",
     "#/kpi": "kpi",
     "#/data-import": "data-import",
+    "#/data-quality": "data-import",
     "#/google-forms": "google-forms",
     "#/actions": "actions",
     "#/settings": "settings",
@@ -352,13 +414,20 @@ function GaugeCard({ label, value, target, colorClass }: { label: string; value:
 }
 
 type FilterOptions = {
-  dates: string[];
+  /** Earliest date in the dataset (ISO), empty when the dataset has no dates. */
+  minDate: string;
+  /** Latest date in the dataset (ISO), empty when the dataset has no dates. */
+  maxDate: string;
+  /** Business line labels present in the dataset (business lines first). */
+  lines: string[];
+  /** Fixed two-shift business model: Day (A), Night (B). */
   shifts: string[];
-  machines: string[];
-  machineNos: string[];
+  /** Business materials present in the dataset. */
   materials: string[];
-  parts: string[];
-  partNos: string[];
+  /** All work centers present in the dataset (business order). */
+  allWorkCenters: string[];
+  /** Work centers present per normalized line label (line-aware filtering). */
+  workCentersByLine: Record<string, string[]>;
 };
 
 function FilterBar({
@@ -382,35 +451,100 @@ function FilterBar({
     return [allLabel, ...values];
   };
 
-  const fieldList = [
-    { key: "date", label: "Date", options: makeOptions("All Dates", options.dates) },
+  const dateRangeInvalid = Boolean(filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo);
+
+  // Work Center options are line-aware: only work centers present in the
+  // selected line's data are offered (all work centers when Line = All Lines).
+  const lineAwareWorkCenters =
+    filters.line === "All Lines"
+      ? options.allWorkCenters
+      : options.workCentersByLine[filters.line] ?? [];
+
+  const selectFields = [
+    { key: "line", label: "Line", options: makeOptions("All Lines", options.lines) },
     { key: "shift", label: "Shift", options: makeOptions("All Shifts", options.shifts) },
-    { key: "machine", label: "Machine", options: makeOptions("All Machines", options.machines) },
-    { key: "machineNo", label: "Machine No.", options: makeOptions("All Machine No.", options.machineNos) },
+    { key: "workCenter", label: "Work Center", options: makeOptions("All Work Centers", lineAwareWorkCenters) },
     { key: "material", label: "Material", options: makeOptions("All Materials", options.materials) },
-    { key: "part", label: "Part", options: makeOptions("All Parts", options.parts) },
-    { key: "partNo", label: "Part No.", options: makeOptions("All Part No.", options.partNos) },
   ] as const;
 
   const update = (key: keyof FilterState, value: string) => {
+    if (key === "line") {
+      // Dependent filters: if the newly selected line does not contain the
+      // currently selected work center, reset Work Center to a safe state.
+      const validWorkCenters =
+        value === "All Lines" ? options.allWorkCenters : options.workCentersByLine[value] ?? [];
+      const workCenter =
+        filters.workCenter !== "All Work Centers" && !validWorkCenters.includes(filters.workCenter)
+          ? "All Work Centers"
+          : filters.workCenter;
+      onChange({ ...filters, line: value, workCenter });
+      return;
+    }
     onChange({ ...filters, [key]: value });
   };
+
+  const dateHint = dateRangeInvalid
+    ? "Start date must be on or before end date."
+    : options.minDate && options.maxDate
+      ? `Available: ${formatDisplayDate(options.minDate)} → ${formatDisplayDate(options.maxDate)}`
+      : "Dates come from the loaded dataset.";
 
   return (
     <section className={`panel filter-panel ${expanded ? "filter-panel--expanded" : ""}`}>
       <div className="filter-panel__header">
         <div>
-          <p className="eyebrow">Filters</p>
-          <h2>Operations Control <span>{expanded ? "" : "· dashboard remains visible"}</span></h2>
+          <p className="eyebrow">Filter the live manufacturing dashboard</p>
+          <h2>
+            <span className="filter-panel__icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+              </svg>
+            </span>
+            Operations Control
+          </h2>
         </div>
         <button type="button" className="filter-panel__toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls="operations-filters">
           {expanded ? "Collapse" : "Expand"}<span aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
         </button>
       </div>
 
+      {!expanded && (
+        <div className="filter-panel__summary">
+          <span><strong>Date:</strong> {filters.dateFrom ? formatDisplayDate(filters.dateFrom) : "Start"} → {filters.dateTo ? formatDisplayDate(filters.dateTo) : "End"}</span>
+          <span><strong>Line:</strong> {filters.line}</span>
+          <span><strong>Shift:</strong> {filters.shift}</span>
+          <span><strong>Work Center:</strong> {filters.workCenter}</span>
+          <span><strong>Material:</strong> {filters.material}</span>
+        </div>
+      )}
+
+      {expanded && (
       <div id="operations-filters" className="filter-panel__body">
       <div className="filter-grid">
-        {fieldList.map((field) => {
+        <label className="field field--date-range">
+          <span>Date Range</span>
+          <div className="date-range">
+            <input
+              type="date"
+              value={filters.dateFrom}
+              min={options.minDate || undefined}
+              max={filters.dateTo || options.maxDate || undefined}
+              onChange={(event) => update("dateFrom", event.target.value)}
+              aria-label="Start date"
+            />
+            <span className="date-range__separator" aria-hidden="true">→</span>
+            <input
+              type="date"
+              value={filters.dateTo}
+              min={filters.dateFrom || options.minDate || undefined}
+              max={options.maxDate || undefined}
+              onChange={(event) => update("dateTo", event.target.value)}
+              aria-label="End date"
+            />
+          </div>
+          <small className={`field__hint ${dateRangeInvalid ? "field__hint--error" : ""}`}>{dateHint}</small>
+        </label>
+        {selectFields.map((field) => {
           const unavailable = field.options.length === 2 && field.options[1] === "Not available in dataset";
           return (
             <label key={field.key} className="field">
@@ -430,10 +564,11 @@ function FilterBar({
       </div>
 
       <div className="filter-actions">
-        <button type="button" className="btn btn--primary" onClick={onApply}>Apply Filters</button>
+        <button type="button" className="btn btn--primary" onClick={onApply} disabled={dateRangeInvalid}>Apply Filters</button>
         <button type="button" className="btn btn--ghost" onClick={onReset}>Reset</button>
       </div>
       </div>
+      )}
     </section>
   );
 }
@@ -453,34 +588,96 @@ function SimplePage({ title, subtitle, children }: { title: string; subtitle: st
 }
 
 function buildFilterOptions(records: DprRecord[]): FilterOptions {
-  const uniq = (values: Array<string | undefined>) =>
-    [...new Set(values.filter((value): value is string => Boolean(value && value.trim())))]
-      .sort((a, b) => a.localeCompare(b));
+  const datedRecords = records
+    .map((row) => row.date)
+    .filter((value): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value)))
+    .sort((a, b) => a.localeCompare(b));
+
+    // Lines: business lines (in approved order) are always shown so the dropdown
+  // always presents the full business taxonomy (ERC Line, SKL Line, BFS Line,
+  // Injection Moulding) even when the current dataset has no rows for some of
+  // them. This mirrors the Work Center behaviour. Any additional non-business
+  // line values discovered in the dataset are appended so unknown lines are
+  // never silently lost.
+  const lineSet = new Set<string>();
+  records.forEach((row) => {
+    const line = normalizeLine(row.lineName);
+    if (line) lineSet.add(line);
+  });
+  const lines: string[] = [...BUSINESS_LINES];
+  const extraLines = [...lineSet]
+    .filter((line) => !BUSINESS_LINES.includes(line))
+    .sort((a, b) => a.localeCompare(b));
+  lines.push(...extraLines);
+
+  // Materials: confirmed business materials present in the dataset first
+  // (business order), then any other material values found (e.g. from an
+  // explicit Material Name column) so nothing is silently discarded.
+  const materialSet = new Set<string>();
+  records.forEach((row) => {
+    if (row.material) materialSet.add(row.material);
+  });
+  const businessMaterialsPresent = BUSINESS_MATERIALS.filter((material) => materialSet.has(material));
+  const extraMaterials = [...materialSet]
+    .filter((material) => !BUSINESS_MATERIALS.includes(material))
+    .sort((a, b) => a.localeCompare(b));
+
+  // Work Center options ALWAYS come from the configured business taxonomy
+  // (BUSINESS_WORK_CENTERS), independent of the current dataset. This ensures
+  // the dropdown always shows every business work center (Stock, Bar Cropping,
+  // ..., Application & Deflection) even when the imported data has zero
+  // records for some of them. Selecting a work center with no matching
+  // records is valid and produces a "no matching records" result — never an
+  // empty dropdown.
+  const allWorkCenters = [...BUSINESS_WORK_CENTERS];
+
+    // Line-aware work center options: without a per-line business configuration
+  // mapping, every business work center is a potentially valid choice for any
+  // line — including business lines that have no rows in the current dataset
+  // (e.g. SKL Line when data only contains ERC). (Deriving options from
+  // filtered records is intentionally avoided — see sections 11–12 of the
+  // business requirement.)
+  const workCentersByLine: Record<string, string[]> = {};
+  const allKnownLines = new Set<string>([...BUSINESS_LINES, ...lineSet]);
+  allKnownLines.forEach((line) => {
+    workCentersByLine[line] = [...BUSINESS_WORK_CENTERS];
+  });
 
   return {
-    dates: uniq(records.map((row) => row.date)),
-    shifts: uniq(records.map((row) => row.shift)),
-    machines: uniq(records.map((row) => row.machineName)),
-    machineNos: uniq(records.map((row) => row.machineNo)),
-    materials: uniq(records.map((row) => row.materialName)),
-    parts: uniq(records.map((row) => row.partName)),
-    partNos: uniq(records.map((row) => row.partNo)),
+    minDate: datedRecords[0] ?? "",
+    maxDate: datedRecords[datedRecords.length - 1] ?? "",
+        lines,
+    shifts: [...BUSINESS_SHIFTS],
+    materials: [...businessMaterialsPresent, ...extraMaterials],
+    allWorkCenters,
+    workCentersByLine,
   };
 }
 
 function applyFilters(records: DprRecord[], filters: FilterState): DprRecord[] {
-  const filtered = records.filter((row) => {
-    const datePass = filters.date === "All Dates" || row.date === filters.date;
-    const shiftPass = filters.shift === "All Shifts" || row.shift === filters.shift;
-    const machinePass = filters.machine === "All Machines" || row.machineName === filters.machine;
-    const machineNoPass = filters.machineNo === "All Machine No." || row.machineNo === filters.machineNo;
-    const materialPass = filters.material === "All Materials" || row.materialName === filters.material;
-    const partPass = filters.part === "All Parts" || row.partName === filters.part;
-    const partNoPass = filters.partNo === "All Part No." || row.partNo === filters.partNo;
-    return datePass && shiftPass && machinePass && machineNoPass && materialPass && partPass && partNoPass;
-  });
+  return records.filter((row) => {
+    // Date range (inclusive). Records without a parseable date cannot be
+    // verified against an active range and are excluded while bounded.
+    if (filters.dateFrom && (!row.date || row.date < filters.dateFrom)) return false;
+    if (filters.dateTo && (!row.date || row.date > filters.dateTo)) return false;
 
-  return filtered.length > 0 ? filtered : records;
+    // Line: match on the normalized business label ("ERC" → "ERC Line").
+    const linePass = filters.line === "All Lines" || normalizeLine(row.lineName) === filters.line;
+
+    // Shift: match on the normalized business label ("A" → "Day (A)").
+    const shiftPass = filters.shift === "All Shifts" || normalizeShift(row.shift) === filters.shift;
+
+    const workCenterPass = filters.workCenter === "All Work Centers" || row.workCenter === filters.workCenter;
+    const materialPass = filters.material === "All Materials" || row.material === filters.material;
+
+    return linePass && shiftPass && workCenterPass && materialPass;
+  });
+}
+
+function formatDisplayDate(isoDate: string): string {
+  const parsed = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function buildDailySeries(records: DprRecord[]) {
@@ -629,21 +826,37 @@ function AnalyticsEmptyState({ title, message }: { title: string; message: strin
 }
 
 export function ManufacturingDashboard() {
+  const { logout } = useAuth();
   const [activePage, setActivePage] = useState<PageRoute>(resolveHashRoute());
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [activeSlide, setActiveSlide] = useState<DashboardSlideKey | null>(() => {
+    const hash = typeof window === "undefined" ? "" : window.location.hash;
+    if (hash === "#/data-quality") return "data-quality";
     const page = resolveHashRoute();
     return page === "data-import" ? "data-import" : dashboardSlides.find((slide) => slide.page === page)?.key ?? null;
   });
-  const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
-  const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
+  // ===== STRICT DATA SOURCE SEPARATION =====
+  // Imported dataset (Excel/CSV) and Live Google Sheets are COMPLETELY SEPARATE.
+  // They never mix, never overwrite each other, and never share state.
 
-  const [dataset, setDataset] = useState<DashboardDatasetState | null>(() => loadDashboardDataset());
+  // --- Imported Dataset State (Excel/CSV only) ---
+  const [uploadedDataset, setUploadedDataset] = useState<ImportedDatasetState | null>(null);
+  const [uploadedDraftFilters, setUploadedDraftFilters] = useState<FilterState>(defaultFilters);
+  const [uploadedAppliedFilters, setUploadedAppliedFilters] = useState<FilterState>(defaultFilters);
+
+  // --- Live Google Sheets State (Google Sheets only) ---
+  const [liveDataset, setLiveDataset] = useState<LiveDatasetState | null>(null);
+  const [liveDraftFilters, setLiveDraftFilters] = useState<FilterState>(defaultFilters);
+  const [liveAppliedFilters, setLiveAppliedFilters] = useState<FilterState>(defaultFilters);
+
+  // Legacy dataset state — used only for backward compatibility with file upload
+  const [dataset, setDataset] = useState<DashboardDatasetState | null>(null);
+  const [, setDatasetPersisted] = useState(true);
+
+  // --- File Upload State ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sourceType, setSourceType] = useState<"excel" | "csv">("excel");
   const [dataSourceMode, setDataSourceMode] = useState<"excel-csv" | "google-sheets">("excel-csv");
   const [googleSheetUrl, setGoogleSheetUrl] = useState<string>("");
-  const [googleSheetsStatus, setGoogleSheetsStatus] = useState<{ connected: boolean; source: string; worksheet: string; recordCount: number; lastUpdated: string | null; error: string | null } | null>(null);
   const [googleSheetsLoading, setGoogleSheetsLoading] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [previewResult, setPreviewResult] = useState<ParsedDprWorkbook | null>(null);
@@ -651,6 +864,9 @@ export function ManufacturingDashboard() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Legacy googleSheetsStatus — kept for status display only
+  const [googleSheetsStatus, setGoogleSheetsStatus] = useState<{ connected: boolean; source: string; worksheet: string; recordCount: number; lastUpdated: string | null; error: string | null } | null>(null);
 
   // Live polling and auto-refresh state
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
@@ -667,8 +883,111 @@ export function ManufacturingDashboard() {
   });
   const [currentSpreadsheetId, setCurrentSpreadsheetId] = useState<string>('');
 
+  // Fetch backend Google Sheets configuration on mount to enable live polling
+  // and auto-load the LIVE dataset so the dashboard shows live data immediately.
+  // IMPORTANT: This ONLY updates liveDataset — never touches uploadedDataset.
   useEffect(() => {
-    const sync = () => setActivePage(resolveHashRoute());
+    fetchManufacturingStatus()
+      .then((status) => {
+        if (status.spreadsheetId && status.connectionStatus === "connected") {
+          setCurrentSpreadsheetId(status.spreadsheetId);
+          // Auto-fetch the dataset on mount so the dashboard is live immediately
+          return fetchManufacturingDataset(status.spreadsheetId, "Sheet1")
+            .then((data) => {
+              if (data.connectionStatus === "connected" && data.data.length > 0) {
+                const records = normalizeGoogleSheetRecords(data.data);
+                // STRICT SEPARATION: Only update liveDataset, never uploadedDataset
+                setLiveDataset({
+                  records,
+                  spreadsheetId: status.spreadsheetId,
+                  worksheet: data.worksheet || "Sheet1",
+                  recordCount: records.length,
+                  lastUpdated: data.lastUpdated,
+                  connectionStatus: "connected",
+                  error: null,
+                });
+                // Also update legacy status for display
+                setGoogleSheetsStatus({
+                  connected: true,
+                  source: "google-sheets",
+                  worksheet: data.worksheet || "Sheet1",
+                  recordCount: records.length,
+                  lastUpdated: data.lastUpdated,
+                  error: null,
+                });
+              }
+            });
+        }
+      })
+      .catch(() => {
+        // Backend may not have Google Sheets configured; ignore
+      });
+  }, []);
+
+  // Fetch (or re-fetch) the live Google Sheets dataset.
+  // STRICT SEPARATION: Only updates liveDataset — never touches uploadedDataset.
+  const reloadLiveDataset = useCallback((spreadsheetId: string) => {
+    if (!spreadsheetId) return Promise.resolve();
+    return fetchManufacturingDataset(spreadsheetId, "Sheet1")
+      .then((data) => {
+        if (data.connectionStatus === "connected" && data.data.length > 0) {
+          const records = normalizeGoogleSheetRecords(data.data);
+          // Only update live dataset state
+          setLiveDataset({
+            records,
+            spreadsheetId,
+            worksheet: data.worksheet || "Sheet1",
+            recordCount: records.length,
+            lastUpdated: data.lastUpdated,
+            connectionStatus: "connected",
+            error: null,
+          });
+          // Also update legacy status for display
+          setGoogleSheetsStatus({
+            connected: true,
+            source: "google-sheets",
+            worksheet: data.worksheet || "Sheet1",
+            recordCount: records.length,
+            lastUpdated: data.lastUpdated,
+            error: null,
+          });
+        }
+      })
+      .catch(() => {
+        // Ignore fetch errors; dashboard will show existing data
+        setLiveDataset((prev => prev ? { ...prev, connectionStatus: "error" as const, error: "Failed to fetch" } : null));
+      });
+  }, []);
+
+  // Fetch Google Sheets data when currentSpreadsheetId is set
+  useEffect(() => {
+    if (!currentSpreadsheetId) return;
+    reloadLiveDataset(currentSpreadsheetId);
+  }, [currentSpreadsheetId, reloadLiveDataset]);
+
+  useEffect(() => {
+    const sync = () => {
+      const page = resolveHashRoute();
+      setActivePage(page);
+      const hash = typeof window === "undefined" ? "" : window.location.hash;
+      const nextSlide =
+        hash === "#/data-quality"
+          ? "data-quality"
+          : page === "data-import"
+            ? "data-import"
+            : dashboardSlides.find((slide) => slide.page === page)?.key ?? null;
+      setActiveSlide((current) => {
+        // goToSlide sets the hash of the target slide's page, which fires this
+        // sync. When the current slide already belongs to that page (e.g.
+        // Downtime on the Production page), keep it so dot/keyboard navigation
+        // to secondary slides is not overridden by the page's first slide.
+        const currentSlide = dashboardSlides.find((slide) => slide.key === current);
+        if (currentSlide && currentSlide.page === page && hash !== "#/data-quality") {
+          return current;
+        }
+        return nextSlide;
+      });
+    };
     sync();
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
@@ -685,7 +1004,7 @@ export function ManufacturingDashboard() {
       if (response.data && response.data.length > 0) {
         const records = normalizeGoogleSheetRecords(response.data);
         const updatedPayload: DashboardDatasetState = {
-          fileName: `Google Sheet ${currentSpreadsheetId}`,
+          fileName: `Google Sheets (${currentSpreadsheetId})`,
           sheetName: response.worksheet || "Sheet1",
           uploadedAt: response.lastUpdated ? new Date(response.lastUpdated).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
           recordCount: response.recordCount,
@@ -700,41 +1019,29 @@ export function ManufacturingDashboard() {
     },
   });
 
-  const slideIndex = Math.max(0, dashboardSlides.findIndex((slide) => slide.key === activeSlide));
+  // ===== STRICT DATA SOURCE SEPARATION =====
+  // Records are computed separately for each source — never mixed.
 
-  useEffect(() => {
-    const moveSlide = (event: KeyboardEvent) => {
-      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-      if (event.key === "Home" || event.key === "End") {
-        goToSlide(event.key === "Home" ? 0 : dashboardSlides.length - 1);
-        return;
-      }
-      const direction = event.key === "ArrowRight" ? 1 : -1;
-      const nextIndex = Math.min(dashboardSlides.length - 1, Math.max(0, slideIndex + direction));
-      const nextSlide = dashboardSlides[nextIndex];
-      if (!nextSlide || nextSlide.key === activeSlide) return;
-      window.location.hash = `#/${nextSlide.page}`;
-      setActiveSlide(nextSlide.key);
-      setActivePage(nextSlide.page);
-    };
-    window.addEventListener("keydown", moveSlide);
-    return () => window.removeEventListener("keydown", moveSlide);
-  }, [activeSlide, slideIndex]);
+  // Imported records (Excel/CSV only)
+  const importedRecords = useMemo(() => uploadedDataset?.records ?? [], [uploadedDataset]);
 
-  const goToSlide = (index: number) => {
-    const nextSlide = dashboardSlides[index];
-    if (!nextSlide) return;
-    window.location.hash = `#/${nextSlide.page}`;
-    setActiveSlide(nextSlide.key);
-    setActivePage(nextSlide.page);
-  };
+  // Live Google Sheets records (Google Sheets only)
+  const liveRecords = useMemo(() => liveDataset?.records ?? [], [liveDataset]);
 
+  // Legacy records — used for backward compatibility with existing render functions
   const records = useMemo(() => (dataset?.records?.length ? dataset.records : mockRecords), [dataset]);
 
-  const filterOptions = useMemo(() => buildFilterOptions(records), [records]);
+  // Filter options for each source
+  const importedFilterOptions = useMemo(() => buildFilterOptions(importedRecords), [importedRecords]);
+  const liveFilterOptions = useMemo(() => buildFilterOptions(liveRecords), [liveRecords]);
 
-  const filteredRecords = useMemo(() => applyFilters(records, appliedFilters), [records, appliedFilters]);
+  // Filtered records for each source
+  const filteredImportedRecords = useMemo(() => applyFilters(importedRecords, uploadedAppliedFilters), [importedRecords, uploadedAppliedFilters]);
+  const filteredLiveRecords = useMemo(() => applyFilters(liveRecords, liveAppliedFilters), [liveRecords, liveAppliedFilters]);
+
+  // Legacy filter options and filtered records
+  const filterOptions = useMemo(() => buildFilterOptions(records), [records]);
+  const filteredRecords = useMemo(() => applyFilters(records, liveAppliedFilters), [records, liveAppliedFilters]);
 
   const productionKpis = useMemo(() => calculateProductionKpis(filteredRecords), [filteredRecords]);
   const oeeSummary = useMemo(() => calculateOeeSummary(filteredRecords), [filteredRecords]);
@@ -748,6 +1055,48 @@ export function ManufacturingDashboard() {
     [previewResult]
   );
   const filteredAnalysis = useMemo(() => calculateManufacturingAnalysis(filteredRecords), [filteredRecords]);
+
+  // ===== Dashboard analytics carousel =====
+  // Uses LIVE records only — strict separation from imported data
+  const carouselAnalytics = useDashboardAnalytics(filteredLiveRecords);
+
+  // Data-quality summary for the Insights slide (business-dimension checks).
+  const carouselDataQuality = useMemo(() => {
+    const q = analyzeBusinessDataQuality(filteredLiveRecords);
+    return {
+      totalRecords: q.totalRecords,
+      validRecords: Math.max(0, q.totalRecords - q.missingDate - q.invalidDate),
+      missingDate: q.missingDate,
+      invalidDate: q.invalidDate,
+      missingLine: q.missingLine,
+      missingShift: q.missingShift,
+      missingPart: q.unmappedMaterialPartValues.length,
+      missingStage: filteredLiveRecords.filter((row) => !row.rawStage?.trim()).length,
+      missingMachine: filteredLiveRecords.filter((row) => !row.machineName?.trim() && !row.machineNo?.trim()).length,
+      unmappedWorkCenter: q.unmappedWorkCenter,
+      duplicateRows: q.duplicateRows,
+    };
+  }, [filteredLiveRecords]);
+
+  const carouselSlides: CarouselSlide[] = useMemo(
+    () => [
+      { id: "executive", title: "Executive Overview", icon: "📊", content: <ExecutiveOverviewSlide analytics={carouselAnalytics} /> },
+      { id: "production", title: "Production Performance", icon: "🏭", content: <ProductionSlide analytics={carouselAnalytics} /> },
+      { id: "prod-loss", title: "Production Loss", icon: "📉", content: <ProductionLossSlide analytics={carouselAnalytics} /> },
+      { id: "downtime", title: "Downtime Command Center", icon: "⏱", content: <DowntimeCommandCenterSlide analytics={carouselAnalytics} /> },
+      { id: "downtime-root", title: "Downtime Root Cause", icon: "🔍", content: <DowntimeRootCauseSlide analytics={carouselAnalytics} /> },
+      { id: "quality", title: "Quality", icon: "✅", content: <QualitySlide analytics={carouselAnalytics} /> },
+      { id: "line-perf", title: "Line Performance", icon: "📈", content: <LinePerformanceSlide analytics={carouselAnalytics} /> },
+      { id: "shift-perf", title: "Shift Performance", icon: "🕐", content: <ShiftPerformanceSlide analytics={carouselAnalytics} /> },
+      { id: "material", title: "Material / Part", icon: "🧱", content: <MaterialPartSlide analytics={carouselAnalytics} /> },
+      { id: "stage", title: "Stage Analytics", icon: "⚙️", content: <StageAnalyticsSlide analytics={carouselAnalytics} /> },
+      { id: "workcenter", title: "Work Center Analytics", icon: "🏗️", content: <WorkCenterAnalyticsSlide analytics={carouselAnalytics} /> },
+      { id: "machine", title: "Machine Analytics", icon: "🔧", content: <MachineAnalyticsSlide analytics={carouselAnalytics} /> },
+      { id: "relationship", title: "Downtime vs Loss", icon: "🔗", content: <RelationshipSlide analytics={carouselAnalytics} /> },
+      { id: "insights", title: "Management Insights", icon: "💡", content: <ManagementInsightsSlide analytics={carouselAnalytics} dataQuality={carouselDataQuality} /> },
+    ],
+    [carouselAnalytics, carouselDataQuality]
+  );
 
   const topDowntimeReason = downtime.byReason[0]?.key ?? null;
 
@@ -772,11 +1121,6 @@ export function ManufacturingDashboard() {
       end: dates[dates.length - 1],
     };
   }, [filteredRecords]);
-
-  const sourceName = dataset?.fileName ?? "Demo Data";
-  const sourceSheet = dataset?.sheetName ?? "Mock";
-  const sourceRecords = dataset?.recordCount ?? mockRecords.length;
-  const sourceUpdated = dataset?.uploadedAt ?? "No uploaded dataset";
 
   const productionVariance = varianceTrend(productionKpis.productionAchievementPercent, 100);
   const oeeVariance = varianceTrend(oeeSummary.oeePercent, 75);
@@ -914,14 +1258,45 @@ export function ManufacturingDashboard() {
         dashboardReference: previewResult.dashboardReference,
       };
 
-      saveDashboardDataset(payload);
-      setDataset(payload);
+      // STRICT SEPARATION: Only update uploadedDataset — never touch liveDataset.
+      // The legacy `dataset` state is intentionally NOT updated here so the
+      // Overview / live dashboard is never affected by Data Import uploads.
+      setUploadedDataset({
+        records: previewResult.records,
+        fileName: previewResult.fileName,
+        sheetName: previewResult.sheetName,
+        recordCount: previewResult.rowCount,
+        uploadedAt: new Date().toISOString(),
+        sourceType: previewResult.sourceType,
+      });
+      const persisted = saveDashboardDataset(payload);
+      setDatasetPersisted(persisted);
+      // Reset IMPORTED filters to the newly imported dataset's full available range
+      const datedRecords = payload.records
+        .map((row) => row.date)
+        .filter((value): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value)))
+        .sort((a, b) => a.localeCompare(b));
+      const resetFilters: FilterState = {
+        ...defaultFilters,
+        dateFrom: datedRecords[0] ?? "",
+        dateTo: datedRecords[datedRecords.length - 1] ?? "",
+      };
+      setUploadedDraftFilters(resetFilters);
+      setUploadedAppliedFilters(resetFilters);
       setSubmitting(false);
-      window.location.hash = "#/dashboard";
-      setActivePage("dashboard");
+      // Stay on the Data Import page — the generated dashboard renders below
+      // the Data Import Center. Never navigate to Overview from here.
+      setActivePage("data-import");
+      if (typeof window !== "undefined" && window.location.hash !== "#/data-import") {
+        window.location.hash = "#/data-import";
+      }
     }, 700);
   };
 
+  // Google Sheets connected THROUGH the Data Import page.
+  // STRICT SEPARATION: this creates/updates the IMPORTED dataset context only.
+  // It must never overwrite the live Overview dataset (liveDataset /
+  // currentSpreadsheetId stay untouched) and never navigates to Overview.
   const handleGoogleSheetsConnect = async () => {
     const rawUrl = googleSheetUrl.trim();
     if (!rawUrl) {
@@ -944,20 +1319,10 @@ export function ManufacturingDashboard() {
 
     try {
       const response = await fetchManufacturingDataset(spreadsheetId, "Sheet1");
-      const records = normalizeGoogleSheetRecords(response.data ?? []);
-      const payload: DashboardDatasetState = {
-        fileName: `Google Sheet ${spreadsheetId}`,
-        sheetName: response.worksheet || "Sheet1",
-        uploadedAt: response.lastUpdated ? new Date(response.lastUpdated).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Not synced yet",
-        recordCount: response.recordCount,
-        records,
-      };
+      const connected = response.connectionStatus === "connected" && !response.error;
 
-      saveDashboardDataset(payload);
-      setDataset(payload);
-      setCurrentSpreadsheetId(spreadsheetId);
       setGoogleSheetsStatus({
-        connected: response.connectionStatus === "connected" && !response.error,
+        connected,
         source: response.source,
         worksheet: response.worksheet || "Sheet1",
         recordCount: response.recordCount,
@@ -965,10 +1330,51 @@ export function ManufacturingDashboard() {
         error: response.error,
       });
 
-      if (response.connectionStatus === "connected") {
-        window.location.hash = "#/dashboard";
-        setActivePage("dashboard");
+      if (connected && response.data.length > 0) {
+        const records = normalizeGoogleSheetRecords(response.data);
+        const connectedAt = response.lastUpdated
+          ? new Date(response.lastUpdated).toLocaleString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : new Date().toLocaleString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+        // Imported context ONLY — live dataset is never touched here.
+        setUploadedDataset({
+          records,
+          fileName: spreadsheetId,
+          sheetName: response.worksheet || "Sheet1",
+          recordCount: records.length,
+          uploadedAt: connectedAt,
+          sourceType: "google-sheets",
+          spreadsheetId,
+          worksheet: response.worksheet || "Sheet1",
+          lastUpdated: connectedAt,
+        });
+
+        // Reset IMPORTED filters to the connected dataset's full date range.
+        const datedRecords = records
+          .map((row) => row.date)
+          .filter((value): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value)))
+          .sort((a, b) => a.localeCompare(b));
+        const resetFilters: FilterState = {
+          ...defaultFilters,
+          dateFrom: datedRecords[0] ?? "",
+          dateTo: datedRecords[datedRecords.length - 1] ?? "",
+        };
+        setUploadedDraftFilters(resetFilters);
+        setUploadedAppliedFilters(resetFilters);
       }
+      // Stay on the Data Import page — the generated dashboard renders below.
     } catch (error) {
       setGoogleSheetsStatus({
         connected: false,
@@ -988,7 +1394,7 @@ export function ManufacturingDashboard() {
       <div className="top-summary-row">
         <div className="summary-pill"><strong>Date Range</strong> {formatDateForDisplay(headerDateRange.start)} → {formatDateForDisplay(headerDateRange.end)}</div>
         <div className="summary-pill"><strong>Shifts</strong> {filterOptions.shifts.length || "N/A"}</div>
-        <div className="summary-pill"><strong>Machines</strong> {filterOptions.machineNos.length || "N/A"}</div>
+        <div className="summary-pill"><strong>Lines</strong> {filterOptions.lines.length || "N/A"}</div>
         <div className="summary-pill"><strong>Records</strong> {toPlainNumber(filteredRecords.length, 0)}</div>
       </div>
 
@@ -1111,14 +1517,6 @@ export function ManufacturingDashboard() {
         </div>
       </article>
     </>
-  );
-
-  const renderProduction = () => (
-    <div className="kpi-grid four-up">
-      {overviewKpis.slice(0, 4).map((item) => (
-        <KpiCard key={item.label} item={item} />
-      ))}
-    </div>
   );
 
   const renderOee = () => (
@@ -1258,7 +1656,7 @@ export function ManufacturingDashboard() {
           <div className="import-steps" aria-label="Import workflow">
             <div className={`import-step ${selectedFile ? "import-step--complete" : "import-step--active"}`}><span>01</span><strong>Upload</strong><small>Choose a source file</small></div>
             <div className={`import-step ${previewResult ? "import-step--complete" : selectedFile ? "import-step--active" : ""}`}><span>02</span><strong>Inspect</strong><small>Review detected data</small></div>
-            <div className={`import-step ${dataset?.fileName === selectedFile?.name ? "import-step--complete" : previewResult ? "import-step--active" : ""}`}><span>03</span><strong>Analyse</strong><small>Update dashboard</small></div>
+            <div className={`import-step ${uploadedDataset?.fileName === selectedFile?.name ? "import-step--complete" : previewResult ? "import-step--active" : ""}`}><span>03</span><strong>Analyse</strong><small>Update dashboard</small></div>
           </div>
           <div className="form-grid">
             <label className="field">
@@ -1483,7 +1881,7 @@ export function ManufacturingDashboard() {
                 </table>
               </div>
 
-              {dataset && dataset.fileName === previewResult.fileName ? (
+              {uploadedDataset && uploadedDataset.fileName === previewResult.fileName ? (
                 <div className="panel panel--success">
                   <h3 style={{ marginTop: 0 }}>Dashboard Updated Successfully</h3>
                   <p className="field__hint">File: {previewResult.fileName}</p>
@@ -1497,43 +1895,6 @@ export function ManufacturingDashboard() {
         </div>
       </SimplePage>
     );
-  };
-
-  const renderPageContent = () => {
-    switch (activePage) {
-      case "dashboard":
-        return renderOverview();
-      case "production":
-        return renderProduction();
-      case "oee":
-        return renderOee();
-      case "quality":
-        return renderQuality();
-      case "data-import":
-        return renderImport();
-      case "actions":
-        return (
-          <SimplePage title="Top 10 Pending Actions" subtitle="Action register">
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead><tr><th>Priority</th><th>Action</th><th>Department</th><th>Owner</th><th>Due</th><th>Status</th><th>Days</th></tr></thead>
-                <tbody>{pendingActions.map((item) => (
-                  <tr key={`${item.action}-${item.owner}`}>
-                    <td><span className={`priority priority--${item.priority.toLowerCase()}`}>{item.priority}</span></td>
-                    <td>{item.action}</td><td>{item.department}</td><td>{item.owner}</td><td>{item.due}</td><td>{item.status}</td><td>{item.days}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          </SimplePage>
-        );
-      default:
-        return (
-          <SimplePage title={routeToTitle[activePage]} subtitle="Available in current shell">
-            <p className="field__hint">This milestone only connects production, OEE, quality, downtime, and data import to uploaded DPR data.</p>
-          </SimplePage>
-        );
-    }
   };
 
   const renderAnalyticsSlide = (slide: DashboardSlideKey) => {
@@ -1562,7 +1923,58 @@ export function ManufacturingDashboard() {
     }
     if (slide === "insights") return <div className="panel-grid two-up"><article className="panel"><div className="section-header compact"><div><p className="eyebrow">Signal review</p><h2>Automated Insights</h2></div></div><ul className="insight-list">{insights.ai.map((line) => <li key={line}>{line}</li>)}</ul></article><article className="panel"><div className="section-header compact"><div><p className="eyebrow">Uploaded data</p><h2>Analysis Signals</h2></div></div><ul className="mini-list">{filteredAnalysis.insights.map((line) => <li key={line}>{line}</li>)}</ul></article></div>;
     if (slide === "data-import") return renderImport();
-    return previewResult ? <div className="panel-grid two-up"><article className="panel"><div className="section-header compact"><div><p className="eyebrow">Source integrity</p><h2>Data Quality</h2></div></div><div className="summary-grid"><div><span className="field__label">Records</span><strong>{toPlainNumber(previewResult.rowCount, 0)}</strong></div><div><span className="field__label">Columns</span><strong>{previewResult.columnCount}</strong></div><div><span className="field__label">Missing cells</span><strong>{previewResult.dataQuality.missingPercent.toFixed(1)}%</strong></div><div><span className="field__label">Duplicate rows</span><strong>{previewResult.dataQuality.duplicateRows}</strong></div></div></article><article className="panel panel--muted"><div className="section-header compact"><div><p className="eyebrow">Detected capabilities</p><h2>Available Data</h2></div></div><p className="field__hint">{previewResult.availableFields.map((field) => `✓ ${field}`).join("   ")}</p><p className="field__hint">{previewResult.analysisMode === "oee" ? "✓ OEE inputs available" : "⚠ OEE unavailable for this dataset"}</p></article></div> : <AnalyticsEmptyState title="Data quality is waiting for a dataset" message="Preview a CSV or Excel file to inspect records, fields, and completeness." />;
+    {
+      const businessQuality = analyzeBusinessDataQuality(records);
+      return (
+        <div className="panel-grid two-up">
+          {previewResult ? (
+            <>
+              <article className="panel">
+                <div className="section-header compact"><div><p className="eyebrow">Source integrity</p><h2>Data Quality</h2></div></div>
+                <div className="summary-grid"><div><span className="field__label">Records</span><strong>{toPlainNumber(previewResult.rowCount, 0)}</strong></div><div><span className="field__label">Columns</span><strong>{previewResult.columnCount}</strong></div><div><span className="field__label">Missing cells</span><strong>{previewResult.dataQuality.missingPercent.toFixed(1)}%</strong></div><div><span className="field__label">Duplicate rows</span><strong>{previewResult.dataQuality.duplicateRows}</strong></div></div>
+              </article>
+              <article className="panel panel--muted">
+                <div className="section-header compact"><div><p className="eyebrow">Detected capabilities</p><h2>Available Data</h2></div></div>
+                <p className="field__hint">{previewResult.availableFields.map((field) => `✓ ${field}`).join("   ")}</p>
+                <p className="field__hint">{previewResult.analysisMode === "oee" ? "✓ OEE inputs available" : "⚠ OEE unavailable for this dataset"}</p>
+              </article>
+            </>
+          ) : (
+            <article className="panel panel--muted">
+              <div className="section-header compact"><div><p className="eyebrow">Source integrity</p><h2>Data Quality</h2></div></div>
+              <p className="field__hint">Preview a CSV or Excel file to inspect records, fields, and completeness. The checks below cover the active dataset.</p>
+            </article>
+          )}
+          <article className="panel">
+            <div className="section-header compact"><div><p className="eyebrow">Business dimensions</p><h2>Line / Shift / Work Center / Material</h2></div></div>
+            <div className="summary-grid">
+              <div><span className="field__label">Records checked</span><strong>{toPlainNumber(businessQuality.totalRecords, 0)}</strong></div>
+              <div><span className="field__label">Missing Date</span><strong>{toPlainNumber(businessQuality.missingDate, 0)}</strong></div>
+              <div><span className="field__label">Invalid Date</span><strong>{toPlainNumber(businessQuality.invalidDate, 0)}</strong></div>
+              <div><span className="field__label">Missing Line</span><strong>{toPlainNumber(businessQuality.missingLine, 0)}</strong></div>
+              <div><span className="field__label">Unknown Line Values</span><strong>{toPlainNumber(businessQuality.unknownLineValues.length, 0)}</strong></div>
+              <div><span className="field__label">Missing Shift</span><strong>{toPlainNumber(businessQuality.missingShift, 0)}</strong></div>
+              <div><span className="field__label">Unexpected Shift Values</span><strong>{toPlainNumber(businessQuality.unexpectedShiftValues.length, 0)}</strong></div>
+              <div><span className="field__label">Unmapped Work Center rows</span><strong>{toPlainNumber(businessQuality.unmappedWorkCenter, 0)}</strong></div>
+              <div><span className="field__label">Part values without Material</span><strong>{toPlainNumber(businessQuality.unmappedMaterialPartValues.length, 0)}</strong></div>
+              <div><span className="field__label">Duplicate rows</span><strong>{toPlainNumber(businessQuality.duplicateRows, 0)}</strong></div>
+            </div>
+            {businessQuality.unknownLineValues.length ? (
+              <p className="field__hint">Unknown lines requiring review: {businessQuality.unknownLineValues.join(", ")}</p>
+            ) : null}
+            {businessQuality.unexpectedShiftValues.length ? (
+              <p className="field__hint">Unexpected shifts (only Day (A) / Night (B) are recognized): {businessQuality.unexpectedShiftValues.join(", ")}</p>
+            ) : null}
+            {businessQuality.unmappedWorkCenterMachines.length ? (
+              <p className="field__hint">Machines without a confirmed Work Center mapping: {businessQuality.unmappedWorkCenterMachines.slice(0, 12).join(", ")}{businessQuality.unmappedWorkCenterMachines.length > 12 ? "…" : ""}</p>
+            ) : null}
+            {businessQuality.unmappedMaterialPartValues.length ? (
+              <p className="field__hint">Part values without a confirmed Material mapping: {businessQuality.unmappedMaterialPartValues.slice(0, 12).join(", ")}{businessQuality.unmappedMaterialPartValues.length > 12 ? "…" : ""}</p>
+            ) : null}
+          </article>
+        </div>
+      );
+    }
   };
 
   return (
@@ -1576,29 +1988,7 @@ export function ManufacturingDashboard() {
           </div>
         </div>
 
-<div
-  className="sidebar__owner"
->
-  <img
-    src="/Patil%20Sir%20Picture.jpg"
-    alt="Dr. L. S. Patil"
-    className="sidebar__owner-photo"
-  />
 
-  <div className="sidebar__owner-copy">
-    <span>
-      OWNER
-    </span>
-
-    <strong>
-      Dr. L. S. Patil
-    </strong>
-
-    <small>
-      (Lingaraj Shantalingappa Patil)
-    </small>
-  </div>
-</div>
         <nav className="sidebar__nav" aria-label="Sidebar navigation">
           {navItems.map((item) => (
             <button
@@ -1621,16 +2011,36 @@ export function ManufacturingDashboard() {
 
       <main className="dashboard-shell">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Patil Group</p>
-            <h1>{dashboardSlides.find((slide) => slide.key === activeSlide)?.title ?? routeToTitle[activePage]}</h1>
+          <div className="topbar__branding">
+            <div className="topbar__brand-mark" aria-label="Patil Group">PG</div>
+            <div>
+              <p className="eyebrow">Patil Group</p>
+              <h1>{dashboardSlides.find((slide) => slide.key === activeSlide)?.title ?? routeToTitle[activePage]}</h1>
+            </div>
           </div>
 
           <div className="topbar__right">
-            <div className="status-block">
-              <span className="status-dot status-dot--live" />
-              Live
-            </div>
+            {liveDataset?.connectionStatus === "connected" ? (
+              <div className="status-block status-block--live" title={`Google Sheets: ${liveDataset.worksheet} • ${liveDataset.recordCount} records`}>
+                <span className="status-dot status-dot--live" />
+                Google Sheets
+              </div>
+            ) : liveDataset?.connectionStatus === "error" ? (
+              <div className="status-block status-block--stale" title={liveDataset.error ?? "Connection error"}>
+                <span className="status-dot status-dot--stale" />
+                Sheets Offline
+              </div>
+            ) : uploadedDataset ? (
+              <div className="status-block status-block--imported" title={`Uploaded: ${uploadedDataset.fileName}`}>
+                <span className="status-dot status-dot--imported" />
+                Uploaded Data
+              </div>
+            ) : (
+              <div className="status-block">
+                <span className="status-dot status-dot--idle" />
+                No Data
+              </div>
+            )}
             <div className="topbar__meta">
               <span>{new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>
               <span>{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
@@ -1640,73 +2050,127 @@ export function ManufacturingDashboard() {
               <span className="user-badge__avatar">PL</span>
               <div>
                 <strong>Plant Lead</strong>
-                <small>{appliedFilters.shift === "All Shifts" ? "All" : appliedFilters.shift}</small>
+                <small>{liveAppliedFilters.shift === "All Shifts" ? "All" : liveAppliedFilters.shift}</small>
               </div>
             </div>
+            <button type="button" className="btn btn--ghost" onClick={logout}>Sign out</button>
           </div>
         </header>
 
-        <FilterBar
-          filters={draftFilters}
-          onChange={setDraftFilters}
-          onApply={() => setAppliedFilters(draftFilters)}
-          onReset={() => {
-            setDraftFilters(defaultFilters);
-            setAppliedFilters(defaultFilters);
-          }}
-          options={filterOptions}
-        />
+        {activePage === "data-import" ? (
+          <>
+            {/* ===== DATA IMPORT PAGE — owned container for imported analysis ===== */}
+            {renderImport()}
 
-        <div className="data-status-bar">
-          <span className="data-status data-status--live">● Live</span>
-          <span>Last Updated: {sourceUpdated}</span>
-          <span>Data Source: {sourceName}</span>
-          <span>Sheet: {sourceSheet}</span>
-          <span>Records: {toPlainNumber(sourceRecords, 0)}</span>
-        </div>
-
-        <section className={`dashboard-slide ${activeSlide ? "dashboard-slide--active" : ""}`} aria-label={activeSlide ? "Dashboard slides" : undefined} onTouchStart={(event) => setTouchStartX(event.touches[0]?.clientX ?? null)} onTouchEnd={(event) => {
-          if (touchStartX === null || !activeSlide) return;
-          const delta = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
-          setTouchStartX(null);
-          if (Math.abs(delta) > 48) goToSlide(delta < 0 ? Math.min(dashboardSlides.length - 1, slideIndex + 1) : Math.max(0, slideIndex - 1));
-        }}>
-          {activeSlide ? <div className="dashboard-slide__heading"><div><p className="eyebrow">Analytics presentation</p><h2>{dashboardSlides.find((slide) => slide.key === activeSlide)?.title}</h2><p>{dashboardSlides.find((slide) => slide.key === activeSlide)?.subtitle}</p></div><span className="dashboard-slide__count">{String(slideIndex + 1).padStart(2, "0")} / {String(dashboardSlides.length).padStart(2, "0")}</span></div> : null}
-          <button
-            type="button"
-            className="dashboard-slide__arrow dashboard-slide__arrow--previous"
-            aria-label="Previous dashboard slide"
-            onClick={() => goToSlide(Math.max(0, slideIndex - 1))}
-            disabled={!activeSlide || slideIndex === 0}
-          >
-            <span className="dashboard-slide__chevron dashboard-slide__chevron--left" aria-hidden="true" />
-          </button>
-
-          <div className="dashboard-slide__content">{activeSlide ? renderAnalyticsSlide(activeSlide) : renderPageContent()}</div>
-
-          <button
-            type="button"
-            className="dashboard-slide__arrow dashboard-slide__arrow--next"
-            aria-label="Next dashboard slide"
-            onClick={() => goToSlide(Math.min(dashboardSlides.length - 1, slideIndex + 1))}
-            disabled={!activeSlide || slideIndex === dashboardSlides.length - 1}
-          >
-            <span className="dashboard-slide__chevron dashboard-slide__chevron--right" aria-hidden="true" />
-          </button>
-
-          <nav className="dashboard-slide__dots" aria-label="Dashboard slide navigation">
-            {dashboardSlides.map((slide, index) => (
-              <button
-                key={slide.key}
-                type="button"
-                className={`dashboard-slide__dot ${activeSlide === slide.key ? "dashboard-slide__dot--active" : ""}`}
-                aria-label={`Show ${slide.title}`}
-                aria-current={activeSlide === slide.key ? "page" : undefined}
-                onClick={() => goToSlide(index)}
+            {/* ===== GENERATED DATASET ANALYSIS (below Data Import Center) ===== */}
+            {uploadedDataset ? (
+              <ImportedDatasetSection
+                records={filteredImportedRecords}
+                fileName={uploadedDataset.fileName}
+                recordCount={uploadedDataset.recordCount}
+                dateMin={importedFilterOptions.minDate}
+                dateMax={importedFilterOptions.maxDate}
+                sourceType={uploadedDataset.sourceType}
+                worksheet={uploadedDataset.worksheet}
+                lastUpdated={uploadedDataset.lastUpdated}
+                filters={uploadedDraftFilters}
+                onFiltersChange={setUploadedDraftFilters}
+                onApplyFilters={() => setUploadedAppliedFilters(uploadedDraftFilters)}
+                onResetFilters={() => {
+                  const resetFilters: FilterState = {
+                    ...defaultFilters,
+                    dateFrom: importedFilterOptions.minDate,
+                    dateTo: importedFilterOptions.maxDate,
+                  };
+                  setUploadedDraftFilters(resetFilters);
+                  setUploadedAppliedFilters(resetFilters);
+                }}
               />
-            ))}
-          </nav>
-        </section>
+            ) : (
+              <div className="imported-empty-state" role="status">
+                <div className="imported-empty-state__icon">📊</div>
+                <h3>No Dataset Yet</h3>
+                <p>Upload or connect a dataset above to generate analysis.</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* ===== OVERVIEW / LIVE PAGES — live dashboard only ===== */}
+            {/* The imported dataset dashboard is intentionally NOT rendered here.
+                It belongs exclusively to the Data Import page. */}
+            {liveDataset ? (
+              <LiveGoogleSheetsSection
+                records={filteredLiveRecords}
+                spreadsheetId={liveDataset.spreadsheetId}
+                worksheet={liveDataset.worksheet}
+                recordCount={liveDataset.recordCount}
+                lastUpdated={liveDataset.lastUpdated}
+                connectionStatus={liveDataset.connectionStatus}
+                error={liveDataset.error}
+                filters={liveDraftFilters}
+                onFiltersChange={setLiveDraftFilters}
+                onApplyFilters={() => setLiveAppliedFilters(liveDraftFilters)}
+                onResetFilters={() => {
+                  const resetFilters: FilterState = {
+                    ...defaultFilters,
+                    dateFrom: liveFilterOptions.minDate,
+                    dateTo: liveFilterOptions.maxDate,
+                  };
+                  setLiveDraftFilters(resetFilters);
+                  setLiveAppliedFilters(resetFilters);
+                }}
+                onRefresh={() => reloadLiveDataset(currentSpreadsheetId)}
+                isRefreshing={googleSheetsLoading}
+              />
+            ) : (
+              <div className="live-empty-state">
+                <div className="live-empty-state__icon">⚠</div>
+                <h3>No Live Google Sheets Connection</h3>
+                <p>Connect to Google Sheets to see live manufacturing analytics.</p>
+              </div>
+            )}
+
+            {/* Legacy carousel — kept for backward compatibility when no live dataset */}
+            {!liveDataset && activeSlide !== "data-quality" && activeSlide && (
+              <DashboardCarousel slides={carouselSlides} />
+            )}
+
+            {/* Data Quality slide (live context) */}
+            {activeSlide === "data-quality" ? renderAnalyticsSlide(activeSlide) : null}
+
+            {/* Filtered-out notice — belongs with the analytics, ABOVE Operations Control */}
+            {liveRecords.length > 0 && filteredLiveRecords.length === 0 ? (
+              <div className="filter-empty-banner" role="status">
+                No records match the active filters. Adjust the Date Range, Line, Shift, Work Center, or Material filters, or press Reset.
+              </div>
+            ) : null}
+
+            {/* ===== OPERATIONS CONTROL =====
+                Bottom of the Overview page — rendered AFTER the live analytics
+                carousel. Single instance; controls ONLY the live dataset via
+                liveDraftFilters/liveAppliedFilters. It never touches the Data
+                Import page or the imported dataset filters. */}
+            <FilterBar
+              filters={liveDraftFilters}
+              onChange={setLiveDraftFilters}
+              onApply={() => setLiveAppliedFilters(liveDraftFilters)}
+              onReset={() => {
+                // Reset ONLY the Overview/live filters — the imported dataset,
+                // Data Import filters, and the live connection are untouched.
+                const options = liveDataset ? liveFilterOptions : filterOptions;
+                const resetFilters: FilterState = {
+                  ...defaultFilters,
+                  dateFrom: options.minDate,
+                  dateTo: options.maxDate,
+                };
+                setLiveDraftFilters(resetFilters);
+                setLiveAppliedFilters(resetFilters);
+              }}
+              options={liveDataset ? liveFilterOptions : filterOptions}
+            />
+          </>
+        )}
       </main>
     </div>
   );

@@ -1,13 +1,20 @@
 """Application settings loaded from environment variables."""
 
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Resolve .env relative to this file so it works regardless of the CWD
+# from which uvicorn is launched (e.g., project root vs backend/).
+_ENV_FILE = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -25,8 +32,16 @@ class Settings(BaseSettings):
     auth_access_token_expire_minutes: int = 60
 
     google_sheets_spreadsheet_id: str = ""
+    google_sheets_worksheet_name: str = ""
     google_sheets_default_worksheet: str = "Sheet1"
     google_sheets_cache_ttl_seconds: int = 45
+
+    # Google Sheets service-account credential (file path or inline JSON).
+    # Can be set via env var GOOGLE_SERVICE_ACCOUNT_JSON or in .env file.
+    google_service_account_json: str = ""
+    google_service_account_credentials: str = ""
+    google_sheets_credentials_json: str = ""
+    google_sheets_service_account_json: str = ""
 
     # PostgreSQL — credentials come from env; never commit real secrets
     # Prefer 127.0.0.1 over localhost so clients do not resolve to a different

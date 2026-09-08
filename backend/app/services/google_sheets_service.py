@@ -236,28 +236,68 @@ def build_google_sheet_status(
 
 
 def _get_credentials_info() -> dict[str, Any] | None:
-    raw = (
-        os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-        or os.getenv("GOOGLE_SERVICE_ACCOUNT_CREDENTIALS")
-        or os.getenv("GOOGLE_SHEETS_CREDENTIALS_JSON")
-        or os.getenv("GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON")
-        or ""
-    ).strip()
+    """Resolve Google Sheets service-account credentials.
+
+    Checks both OS environment variables and Pydantic settings (.env file).
+    OS environment variables take precedence for runtime overrides.
+
+    Priority order:
+      1. GOOGLE_SERVICE_ACCOUNT_JSON env var
+      2. settings.google_service_account_json (from .env file)
+      3. GOOGLE_SERVICE_ACCOUNT_CREDENTIALS env var
+      4. settings.google_service_account_credentials (from .env file)
+      5. GOOGLE_SHEETS_CREDENTIALS_JSON env var
+      6. settings.google_sheets_credentials_json (from .env file)
+      7. GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON env var
+      8. settings.google_sheets_service_account_json (from .env file)
+
+    Returns parsed JSON dict or None if no credentials found.
+    """
+    # Check sources in priority order: OS env var first, then settings (.env)
+    sources = [
+        ("GOOGLE_SERVICE_ACCOUNT_JSON", settings.google_service_account_json),
+        ("GOOGLE_SERVICE_ACCOUNT_CREDENTIALS", settings.google_service_account_credentials),
+        ("GOOGLE_SHEETS_CREDENTIALS_JSON", settings.google_sheets_credentials_json),
+        ("GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON", settings.google_sheets_service_account_json),
+    ]
+
+    raw = ""
+    source_name = ""
+    for env_var, settings_val in sources:
+        # Check OS environment first (allows runtime override)
+        env_val = (os.getenv(env_var) or "").strip()
+        if env_val:
+            raw = env_val
+            source_name = f"env:{env_var}"
+            break
+        # Fall back to settings (.env file)
+        if settings_val and settings_val.strip():
+            raw = settings_val.strip()
+            source_name = f"settings:{env_var}"
+            break
 
     if not raw:
         return None
 
+    # Resolve file path or inline JSON
     if os.path.exists(raw):
         try:
             with open(raw, "r", encoding="utf-8") as handle:
                 return json.load(handle)
-        except json.JSONDecodeError as exc:  # pragma: no cover - defensive guard
-            raise ValueError(f"Google service account JSON is invalid: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Google service account JSON file is invalid: {exc}") from exc
 
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
         return None
+
+
+_WORKSHEET_NAME_ENV_VARS = (
+    "GOOGLE_SHEETS_WORKSHEET_NAME",
+    "GOOGLE_SHEETS_WORKSHEET",
+    "GOOGLE_SHEETS_DEFAULT_WORKSHEET",
+)
 
 
 def _get_default_spreadsheet_id() -> str:
@@ -266,6 +306,26 @@ def _get_default_spreadsheet_id() -> str:
         if value:
             return value
     return settings.google_sheets_spreadsheet_id.strip()
+
+
+def _get_default_worksheet() -> str:
+    """Resolve the default worksheet name from env vars or settings.
+
+    Priority:
+      1. GOOGLE_SHEETS_WORKSHEET_NAME env var
+      2. settings.google_sheets_worksheet_name
+      3. GOOGLE_SHEETS_DEFAULT_WORKSHEET / settings.google_sheets_default_worksheet
+      4. \"Sheet1\" (Google Sheets default)
+    """
+    for env_var in _WORKSHEET_NAME_ENV_VARS:
+        value = (os.getenv(env_var) or "").strip()
+        if value:
+            return value
+    if settings.google_sheets_worksheet_name:
+        return settings.google_sheets_worksheet_name.strip()
+    if settings.google_sheets_default_worksheet:
+        return settings.google_sheets_default_worksheet.strip()
+    return "Sheet1"
 
 
 def _resolve_worksheet_title(spreadsheet: dict[str, Any], requested_name: str | None) -> str:
@@ -309,7 +369,7 @@ def _fetch_sheet_values(spreadsheet_id: str, worksheet_name: str | None = None) 
 
 def get_google_sheet_status(spreadsheet_id: str | None = None, worksheet_name: str | None = None) -> dict[str, Any]:
     resolved_id = (spreadsheet_id or _get_default_spreadsheet_id()).strip()
-    resolved_worksheet = worksheet_name or settings.google_sheets_default_worksheet.strip()
+    resolved_worksheet = worksheet_name or _get_default_worksheet()
 
     if not resolved_id:
         return build_google_sheet_status(
@@ -346,7 +406,7 @@ def fetch_google_sheet_dataset(
     worksheet_name: str | None = None,
 ) -> dict[str, Any]:
     resolved_id = (spreadsheet_id or _get_default_spreadsheet_id()).strip()
-    resolved_worksheet = worksheet_name or settings.google_sheets_default_worksheet.strip() or "Sheet1"
+    resolved_worksheet = worksheet_name or _get_default_worksheet()
 
     cache_key = f"{resolved_id}:{resolved_worksheet}"
     now = time.monotonic()

@@ -11,7 +11,11 @@
 .factory-layout {
   display: grid;
   grid-template-columns: var(--layout-sidebar-width) 1fr;
-  grid-template-rows: var(--layout-top-bar-height) 1fr;
+  /* Single row — the 60px top-bar row was a stale artifact: no element is
+     placed there, it created a blank band above the dashboard content and
+     clipped the main content area. Content now flows in normal document
+     height and the page itself scrolls. */
+  grid-template-rows: 1fr;
   min-height: 100vh;
   background-color: var(--color-bg-primary);
 }
@@ -334,7 +338,7 @@
 
 @media (max-width: 640px) {
   .factory-layout {
-    grid-template-rows: var(--layout-top-bar-height) 1fr;
+    grid-template-rows: 1fr;
   }
 
   .top-bar {

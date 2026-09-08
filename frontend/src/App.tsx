@@ -12,6 +12,7 @@ import "./styles/layout.css";
 import "./styles/components.css";
 import "./styles/animations.css";
 import "./styles/dashboard.css";
+import "./styles/dashboard-carousel.css";
 import { ManufacturingDashboard } from "./pages/ManufacturingDashboard";
 import "./App.css";
 import "./styles/light-theme-overrides.css";

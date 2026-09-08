@@ -602,7 +602,7 @@ async def upload_flexible(
 
     # Trigger rollup for committed imports with successful records.
     # This ensures oee_snapshots are created/updated, making data visible to dashboard.
-    if result.status == "committed" and result.success_count > 0:
+    if result.status in ("committed", "completed") and result.success_count > 0:
         try:
             # Get production_date from the first successful record
             production_date: date | None = None

@@ -38,9 +38,13 @@ def ensure_super_admin(
     employee_code: str,
     password: str,
 ) -> bool:
-    """Ensure exactly one SUPER_ADMIN exists; create it only when none exists.
+    """Ensure a SUPER_ADMIN exists; create one only when none exists.
 
-    Returns True when a new SUPER_ADMIN was created and False when one already exists.
+    The RBAC schema permits multiple SUPER_ADMIN users (no uniqueness
+    constraint on the role at a global level), so this bootstrap only
+    guarantees it never *auto-creates* a duplicate when any SUPER_ADMIN
+    already exists. Returns True when a new SUPER_ADMIN was created and
+    False when one already exists.
     """
     normalized_email = _normalize_email(email)
     normalized_employee_code = _normalize_employee_code(employee_code)

@@ -145,6 +145,30 @@ body {
   overflow-x: hidden;
 }
 
+/* Main dashboard content: span the full grid height (no leftover 60px blank
+   row) and use normal document flow for vertical scrolling. Do NOT make the
+   shell a fixed-height scroll container — that trapped page scrolling and
+   created a nested scrollbar. The browser's primary scrollbar is the single
+   vertical scroller for the whole dashboard page. */
+.factory-layout > .dashboard-shell {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  min-width: 0;
+  /* clip (not hidden) so horizontal overflow is trimmed WITHOUT making the
+     shell a scroll container (overflow-x:hidden forces overflow-y to auto,
+     which would recreate a nested scrollbar). */
+  overflow-x: clip;
+}
+
+/* 1024px and below: sidebar is hidden (display:none in the mobile rules), so
+   the shell is the only visible grid child. Make it span the full grid. */
+@media (max-width: 1024px) {
+  .factory-layout > .dashboard-shell {
+    grid-column: 1 / -1;
+    grid-row: 1 / -1;
+  }
+}
+
 .topbar {
   border-bottom-color: var(--color-border-primary) !important;
   background: transparent;
@@ -234,6 +258,35 @@ body {
 
 .filter-panel__toggle span {
   color: var(--color-primary) !important;
+}
+
+/* Collapsed Operations Control: one compact summary line of the active
+   filter values. No body, no empty space, no nested scrolling. */
+.filter-panel__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--color-border-primary);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+.filter-panel__summary strong {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.filter-panel__icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.45rem;
+  color: var(--color-primary);
+}
+
+.filter-panel__icon svg {
+  display: block;
 }
 
 .filter-grid {

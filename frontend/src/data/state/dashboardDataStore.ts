@@ -25,9 +25,18 @@ export function loadDashboardDataset(): DashboardDatasetState | null {
   }
 }
 
-export function saveDashboardDataset(payload: DashboardDatasetState): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+export function saveDashboardDataset(payload: DashboardDatasetState): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    // Large imported datasets can exceed the browser storage quota. The
+    // dashboard keeps working from in-memory state for the session; the
+    // dataset simply will not survive a page reload until re-imported.
+    console.warn("Dashboard dataset could not be persisted (storage quota exceeded).");
+    return false;
+  }
 }
 
 export function clearDashboardDataset(): void {
