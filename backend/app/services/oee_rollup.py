@@ -42,10 +42,11 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Iterable, Literal
+from typing import Literal
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
@@ -169,9 +170,7 @@ def period_date_bounds(period_type: str, period_start: date) -> tuple[date, date
         return period_start, period_start + dt.timedelta(days=6)
     if period_type == PERIOD_MONTH:
         if period_start.day != 1:
-            raise ValueError(
-                f"month period_start must be the 1st of the month, got {period_start}"
-            )
+            raise ValueError(f"month period_start must be the 1st of the month, got {period_start}")
         if period_start.month == 12:
             next_month = period_start.replace(year=period_start.year + 1, month=1, day=1)
         else:
@@ -288,7 +287,7 @@ def upsert_oee_snapshot(
     if period_type not in PERIOD_TYPES:
         raise ValueError(f"unsupported period_type: {period_type!r}")
 
-    when = computed_at or datetime.now(timezone.utc)
+    when = computed_at or datetime.now(dt.UTC)
 
     existing = session.scalars(
         select(OeeSnapshot).where(

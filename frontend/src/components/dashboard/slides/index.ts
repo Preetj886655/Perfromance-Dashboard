@@ -16,3 +16,7 @@ export { WorkCenterAnalyticsSlide } from "./WorkCenterAnalyticsSlide";
 export { MachineAnalyticsSlide } from "./MachineAnalyticsSlide";
 export { RelationshipSlide } from "./RelationshipSlide";
 export { ManagementInsightsSlide } from "./ManagementInsightsSlide";
+export { PeriodComparisonChart } from "./PeriodComparisonChart";
+export { MachineDetailModal } from "./MachineDetailModal";
+export { TargetActualChart } from "./TargetActualChart";
+export { TargetGapAnalysisSlide } from "./TargetGapAnalysisSlide";

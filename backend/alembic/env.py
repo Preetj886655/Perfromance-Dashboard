@@ -1,16 +1,15 @@
 """Alembic environment — uses ``settings.database_url`` from app config."""
 
-from logging.config import fileConfig
 import logging
+from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import create_engine, pool, text
-
-from app.core.config import settings
-from app.db.base import Base
 
 # Import model modules so Alembic target_metadata includes mapped tables.
 import app.models  # noqa: F401  # Migrations 002–014: masters + production + ingestion + KPI + security + audit/alerts/actions + maintenance + PPC + quality + SCM/logistics thin
+from alembic import context
+from app.core.config import settings
+from app.db.base import Base
 
 config = context.config
 logger = logging.getLogger("alembic.env")

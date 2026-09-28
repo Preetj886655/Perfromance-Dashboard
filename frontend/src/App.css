@@ -887,6 +887,29 @@ body {
   font-weight: 700;
 }
 
+.date-range__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 0.375rem;
+  width: 1.8rem;
+  height: 2.1rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 160ms ease;
+}
+
+.date-range__clear:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--red, #ef4444);
+  color: var(--red, #ef4444);
+}
+
 .field__hint--error {
   color: var(--red, #f87171);
 }

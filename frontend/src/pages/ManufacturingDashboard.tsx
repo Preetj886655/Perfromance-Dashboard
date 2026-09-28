@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
 
 import { calculateDowntimeAnalysis } from "../data/calculations/downtimeAnalysis";
@@ -11,19 +11,29 @@ import { calculateProductionKpis } from "../data/calculations/productionKpis";
 import { calculateQualityAnalysis } from "../data/calculations/qualityAnalysis";
 import { calculateManufacturingAnalysis } from "../data/calculations/manufacturingAnalysis";
 import type { DprRecord, DprValidationIssue } from "../data/normalization/normalizeDprData";
-import { BUSINESS_WORK_CENTERS } from "../data/normalization/workCenterMapping";
 import {
-  BUSINESS_LINES,
-  BUSINESS_MATERIALS,
-  BUSINESS_SHIFTS,
-  normalizeLine,
-  normalizeShift,
-} from "../data/normalization/lineShiftMaterial";
+  applyFilters,
+  ALL_LINES,
+  ALL_MACHINES,
+  ALL_MATERIALS,
+  ALL_SHIFTS,
+  ALL_STAGES,
+  buildFilterOptions,
+  datasetDateBounds,
+  defaultFilters,
+  type FilterOptions,
+  type FilterState,
+} from "../data/filters/dashboardFilterEngine";
+import {
+  type PeriodPreset,
+  resolvePeriodWindow,
+} from "../data/calculations/periodEngine";
 import { useAuth } from "../auth/useAuth";
 import { analyzeBusinessDataQuality } from "../data/analysis/businessDataQuality";
 import { parseDprWorkbookFile, type ParsedDprWorkbook } from "../data/parser/excelParser";
 import { saveDashboardDataset, type DashboardDatasetState } from "../data/state/dashboardDataStore";
 import { fetchManufacturingDataset, fetchManufacturingStatus, normalizeGoogleSheetRecords } from "../services/manufacturingApi";
+import type { ManufacturingApiResponse, ManufacturingConnectionStatus } from "../services/manufacturingApi";
 import { useManufacturingLivePolling } from "../hooks/useManufacturingLivePolling";
 import { LiveStatusIndicator, DataSourceIndicator, AutoRefreshToggle } from "../components/LiveStatusIndicator";
 import type { LiveSyncStatus } from "../hooks/useManufacturingLivePolling";
@@ -43,6 +53,7 @@ import {
   MachineAnalyticsSlide,
   RelationshipSlide,
   ManagementInsightsSlide,
+  TargetGapAnalysisSlide,
   useDashboardAnalytics,
 } from "../components/dashboard/slides";
 import { ImportedDatasetSection } from "../components/dashboard/ImportedDatasetSection";
@@ -50,6 +61,13 @@ import { LiveGoogleSheetsSection } from "../components/dashboard/LiveGoogleSheet
 
 // ===== DATA SOURCE TYPES =====
 // Strict separation: imported vs live Google Sheets
+
+/**
+ * Filter state for the dashboard is owned by the shared filter engine
+ * (`data/filters/dashboardFilterEngine.ts`) which contains the Stage filter.
+ * Re-exported here for backward-compatible imports across components.
+ */
+export type { FilterState } from "../data/filters/dashboardFilterEngine";
 
 /** Live Google Sheets dataset state */
 type LiveDatasetState = {
@@ -95,17 +113,6 @@ type PageRoute =
   | "google-forms"
   | "actions"
   | "settings";
-
-export type FilterState = {
-  /** Inclusive start date (ISO yyyy-mm-dd). Empty string = no lower bound. */
-  dateFrom: string;
-  /** Inclusive end date (ISO yyyy-mm-dd). Empty string = no upper bound. */
-  dateTo: string;
-  line: string;
-  shift: string;
-  workCenter: string;
-  material: string;
-};
 
 type KpiPoint = {
   label: string;
@@ -158,14 +165,7 @@ const routeToTitle: Record<PageRoute, string> = {
   settings: "Dashboard Settings",
 };
 
-const defaultFilters: FilterState = {
-  dateFrom: "",
-  dateTo: "",
-  line: "All Lines",
-  shift: "All Shifts",
-  workCenter: "All Work Centers",
-  material: "All Materials",
-};
+// defaultFilters now lives in the shared filter engine (Stage-aware).
 
 type DashboardSlideKey = "executive" | "production" | "quality" | "downtime" | "machine-line" | "oee" | "insights" | "data-quality" | "data-import";
 
@@ -413,37 +413,31 @@ function GaugeCard({ label, value, target, colorClass }: { label: string; value:
   );
 }
 
-type FilterOptions = {
-  /** Earliest date in the dataset (ISO), empty when the dataset has no dates. */
-  minDate: string;
-  /** Latest date in the dataset (ISO), empty when the dataset has no dates. */
-  maxDate: string;
-  /** Business line labels present in the dataset (business lines first). */
-  lines: string[];
-  /** Fixed two-shift business model: Day (A), Night (B). */
-  shifts: string[];
-  /** Business materials present in the dataset. */
-  materials: string[];
-  /** All work centers present in the dataset (business order). */
-  allWorkCenters: string[];
-  /** Work centers present per normalized line label (line-aware filtering). */
-  workCentersByLine: Record<string, string[]>;
-};
+// FilterOptions lives in the shared filter engine (Stage-aware).
 
 function FilterBar({
   filters,
   onChange,
   onApply,
   onReset,
+  onLatestData,
+  autoDateMode,
   options,
+  loadingLive = false,
 }: {
   filters: FilterState;
   onChange: (next: FilterState) => void;
   onApply: () => void;
   onReset: () => void;
+  /** Return to automatic latest-available-source-date mode. */
+  onLatestData: () => void;
+  /** True while the Date Range is synchronized with the latest source date. */
+  autoDateMode: boolean;
   options: FilterOptions;
+  /** True while the live Google Sheets dataset is still being fetched. */
+  loadingLive?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const makeOptions = (allLabel: string, values: string[]) => {
     if (!values.length) {
       return [allLabel, "Not available in dataset"];
@@ -453,41 +447,54 @@ function FilterBar({
 
   const dateRangeInvalid = Boolean(filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo);
 
-  // Work Center options are line-aware: only work centers present in the
-  // selected line's data are offered (all work centers when Line = All Lines).
-  const lineAwareWorkCenters =
-    filters.line === "All Lines"
-      ? options.allWorkCenters
-      : options.workCentersByLine[filters.line] ?? [];
+  // Stage options are line-aware, computed from ACTUAL dataset records: only
+  // stages genuinely present in the selected line's data are offered (all
+  // dataset stages when Line = All Lines). The list is never hard-coded.
+  const lineAwareStages =
+    filters.line === ALL_LINES ? options.stages : options.stagesByLine[filters.line] ?? [];
 
   const selectFields = [
-    { key: "line", label: "Line", options: makeOptions("All Lines", options.lines) },
-    { key: "shift", label: "Shift", options: makeOptions("All Shifts", options.shifts) },
-    { key: "workCenter", label: "Work Center", options: makeOptions("All Work Centers", lineAwareWorkCenters) },
-    { key: "material", label: "Material", options: makeOptions("All Materials", options.materials) },
+    { key: "line", label: "Line", options: makeOptions(ALL_LINES, options.lines) },
+    { key: "shift", label: "Shift", options: makeOptions(ALL_SHIFTS, options.shifts) },
+    { key: "stage", label: "Stage", options: makeOptions(ALL_STAGES, lineAwareStages) },
+    { key: "machine", label: "Machine", options: makeOptions(ALL_MACHINES, options.machines) },
+    { key: "material", label: "Material", options: makeOptions(ALL_MATERIALS, options.materials) },
   ] as const;
 
   const update = (key: keyof FilterState, value: string) => {
     if (key === "line") {
       // Dependent filters: if the newly selected line does not contain the
-      // currently selected work center, reset Work Center to a safe state.
-      const validWorkCenters =
-        value === "All Lines" ? options.allWorkCenters : options.workCentersByLine[value] ?? [];
-      const workCenter =
-        filters.workCenter !== "All Work Centers" && !validWorkCenters.includes(filters.workCenter)
-          ? "All Work Centers"
-          : filters.workCenter;
-      onChange({ ...filters, line: value, workCenter });
+      // currently selected stage, reset Stage to a safe state ("All Stages").
+      const validStages =
+        value === ALL_LINES ? options.stages : options.stagesByLine[value] ?? [];
+      const stage =
+        filters.stage !== ALL_STAGES && !validStages.includes(filters.stage)
+          ? ALL_STAGES
+          : filters.stage;
+      onChange({ ...filters, line: value, stage });
       return;
     }
     onChange({ ...filters, [key]: value });
   };
 
-  const dateHint = dateRangeInvalid
+  const periodOptions: Array<{ value: PeriodPreset; label: string }> = [
+    { value: "weekly", label: "Weekly" },
+    { value: "monthly", label: "Monthly" },
+    { value: "quarterly", label: "Quarterly" },
+    { value: "yearly", label: "Yearly" },
+  ];
+
+  const periodLabel = periodOptions.find((p) => p.value === filters.period)?.label ?? "Monthly";
+
+  const dateHint = loadingLive
+    ? "Loading live Google Sheets data…"
+    : dateRangeInvalid
     ? "Start date must be on or before end date."
-    : options.minDate && options.maxDate
-      ? `Available: ${formatDisplayDate(options.minDate)} → ${formatDisplayDate(options.maxDate)}`
-      : "Dates come from the loaded dataset.";
+    : filters.dateFrom && filters.dateTo
+      ? `Active window: ${formatDisplayDate(filters.dateFrom)} → ${formatDisplayDate(filters.dateTo)} (${periodLabel} grouping)`
+      : options.minDate && options.maxDate
+        ? `Available: ${formatDisplayDate(options.minDate)} → ${formatDisplayDate(options.maxDate)} (${periodLabel} grouping)`
+        : "Dates come from the loaded dataset.";
 
   return (
     <section className={`panel filter-panel ${expanded ? "filter-panel--expanded" : ""}`}>
@@ -504,16 +511,18 @@ function FilterBar({
           </h2>
         </div>
         <button type="button" className="filter-panel__toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls="operations-filters">
-          {expanded ? "Collapse" : "Expand"}<span aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
+          {expanded ? "Collapse Filters" : "Show Filters"}<span aria-hidden="true">{expanded ? " ⌃" : " ⌄"}</span>
         </button>
       </div>
 
       {!expanded && (
         <div className="filter-panel__summary">
-          <span><strong>Date:</strong> {filters.dateFrom ? formatDisplayDate(filters.dateFrom) : "Start"} → {filters.dateTo ? formatDisplayDate(filters.dateTo) : "End"}</span>
+          <span><strong>Date Range:</strong> {filters.dateFrom ? formatDisplayDate(filters.dateFrom) : "All"} → {filters.dateTo ? formatDisplayDate(filters.dateTo) : "All"}{autoDateMode ? " (auto)" : ""}</span>
+          <span><strong>Period:</strong> {periodLabel}</span>
           <span><strong>Line:</strong> {filters.line}</span>
           <span><strong>Shift:</strong> {filters.shift}</span>
-          <span><strong>Work Center:</strong> {filters.workCenter}</span>
+          <span><strong>Stage:</strong> {filters.stage}</span>
+          <span><strong>Machine:</strong> {filters.machine}</span>
           <span><strong>Material:</strong> {filters.material}</span>
         </div>
       )}
@@ -529,7 +538,9 @@ function FilterBar({
               value={filters.dateFrom}
               min={options.minDate || undefined}
               max={filters.dateTo || options.maxDate || undefined}
-              onChange={(event) => update("dateFrom", event.target.value)}
+              onChange={(event) => {
+                onChange({ ...filters, dateFrom: event.target.value });
+              }}
               aria-label="Start date"
             />
             <span className="date-range__separator" aria-hidden="true">→</span>
@@ -538,11 +549,39 @@ function FilterBar({
               value={filters.dateTo}
               min={filters.dateFrom || options.minDate || undefined}
               max={options.maxDate || undefined}
-              onChange={(event) => update("dateTo", event.target.value)}
+              onChange={(event) => {
+                onChange({ ...filters, dateTo: event.target.value });
+              }}
               aria-label="End date"
             />
+            {(filters.dateFrom || filters.dateTo) ? (
+              <button
+                type="button"
+                className="date-range__clear"
+                title="Clear date range"
+                aria-label="Clear date range"
+                onClick={() => {
+                  onChange({ ...filters, dateFrom: "", dateTo: "" });
+                }}
+              >
+                ✕
+              </button>
+            ) : null}
           </div>
           <small className={`field__hint ${dateRangeInvalid ? "field__hint--error" : ""}`}>{dateHint}</small>
+        </label>
+
+        <label className="field">
+          <span>Period</span>
+          <select
+            value={filters.period}
+            onChange={(event) => onChange({ ...filters, period: event.target.value as PeriodPreset })}
+            aria-label="Filter by period"
+          >
+            {periodOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </label>
         {selectFields.map((field) => {
           const unavailable = field.options.length === 2 && field.options[1] === "Not available in dataset";
@@ -565,6 +604,14 @@ function FilterBar({
 
       <div className="filter-actions">
         <button type="button" className="btn btn--primary" onClick={onApply} disabled={dateRangeInvalid}>Apply Filters</button>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={onLatestData}
+          title="Synchronize the Date Range with the latest date available in the live Google Sheet"
+        >
+          {autoDateMode ? "● Latest Available Data" : "Latest Available Data"}
+        </button>
         <button type="button" className="btn btn--ghost" onClick={onReset}>Reset</button>
       </div>
       </div>
@@ -587,92 +634,8 @@ function SimplePage({ title, subtitle, children }: { title: string; subtitle: st
   );
 }
 
-function buildFilterOptions(records: DprRecord[]): FilterOptions {
-  const datedRecords = records
-    .map((row) => row.date)
-    .filter((value): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value)))
-    .sort((a, b) => a.localeCompare(b));
-
-    // Lines: business lines (in approved order) are always shown so the dropdown
-  // always presents the full business taxonomy (ERC Line, SKL Line, BFS Line,
-  // Injection Moulding) even when the current dataset has no rows for some of
-  // them. This mirrors the Work Center behaviour. Any additional non-business
-  // line values discovered in the dataset are appended so unknown lines are
-  // never silently lost.
-  const lineSet = new Set<string>();
-  records.forEach((row) => {
-    const line = normalizeLine(row.lineName);
-    if (line) lineSet.add(line);
-  });
-  const lines: string[] = [...BUSINESS_LINES];
-  const extraLines = [...lineSet]
-    .filter((line) => !BUSINESS_LINES.includes(line))
-    .sort((a, b) => a.localeCompare(b));
-  lines.push(...extraLines);
-
-  // Materials: confirmed business materials present in the dataset first
-  // (business order), then any other material values found (e.g. from an
-  // explicit Material Name column) so nothing is silently discarded.
-  const materialSet = new Set<string>();
-  records.forEach((row) => {
-    if (row.material) materialSet.add(row.material);
-  });
-  const businessMaterialsPresent = BUSINESS_MATERIALS.filter((material) => materialSet.has(material));
-  const extraMaterials = [...materialSet]
-    .filter((material) => !BUSINESS_MATERIALS.includes(material))
-    .sort((a, b) => a.localeCompare(b));
-
-  // Work Center options ALWAYS come from the configured business taxonomy
-  // (BUSINESS_WORK_CENTERS), independent of the current dataset. This ensures
-  // the dropdown always shows every business work center (Stock, Bar Cropping,
-  // ..., Application & Deflection) even when the imported data has zero
-  // records for some of them. Selecting a work center with no matching
-  // records is valid and produces a "no matching records" result — never an
-  // empty dropdown.
-  const allWorkCenters = [...BUSINESS_WORK_CENTERS];
-
-    // Line-aware work center options: without a per-line business configuration
-  // mapping, every business work center is a potentially valid choice for any
-  // line — including business lines that have no rows in the current dataset
-  // (e.g. SKL Line when data only contains ERC). (Deriving options from
-  // filtered records is intentionally avoided — see sections 11–12 of the
-  // business requirement.)
-  const workCentersByLine: Record<string, string[]> = {};
-  const allKnownLines = new Set<string>([...BUSINESS_LINES, ...lineSet]);
-  allKnownLines.forEach((line) => {
-    workCentersByLine[line] = [...BUSINESS_WORK_CENTERS];
-  });
-
-  return {
-    minDate: datedRecords[0] ?? "",
-    maxDate: datedRecords[datedRecords.length - 1] ?? "",
-        lines,
-    shifts: [...BUSINESS_SHIFTS],
-    materials: [...businessMaterialsPresent, ...extraMaterials],
-    allWorkCenters,
-    workCentersByLine,
-  };
-}
-
-function applyFilters(records: DprRecord[], filters: FilterState): DprRecord[] {
-  return records.filter((row) => {
-    // Date range (inclusive). Records without a parseable date cannot be
-    // verified against an active range and are excluded while bounded.
-    if (filters.dateFrom && (!row.date || row.date < filters.dateFrom)) return false;
-    if (filters.dateTo && (!row.date || row.date > filters.dateTo)) return false;
-
-    // Line: match on the normalized business label ("ERC" → "ERC Line").
-    const linePass = filters.line === "All Lines" || normalizeLine(row.lineName) === filters.line;
-
-    // Shift: match on the normalized business label ("A" → "Day (A)").
-    const shiftPass = filters.shift === "All Shifts" || normalizeShift(row.shift) === filters.shift;
-
-    const workCenterPass = filters.workCenter === "All Work Centers" || row.workCenter === filters.workCenter;
-    const materialPass = filters.material === "All Materials" || row.material === filters.material;
-
-    return linePass && shiftPass && workCenterPass && materialPass;
-  });
-}
+// buildFilterOptions and applyFilters live in the shared filter engine
+// (data/filters/dashboardFilterEngine.ts) — Stage-aware and data-driven.
 
 function formatDisplayDate(isoDate: string): string {
   const parsed = new Date(`${isoDate}T00:00:00`);
@@ -825,9 +788,77 @@ function AnalyticsEmptyState({ title, message }: { title: string; message: strin
   return <article className="analytics-empty-state"><strong>{title}</strong><span>{message}</span></article>;
 }
 
+const LIVE_FILTER_STORAGE_KEY = "patil_dashboard_live_filters";
+const AUTO_DATE_MODE_STORAGE_KEY = "patil_dashboard_auto_date_mode";
+
+/** Restore the automatic latest-source-date mode flag (defaults to ON). */
+function getInitialAutoDateMode(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return sessionStorage.getItem(AUTO_DATE_MODE_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function getInitialLiveFilters(): FilterState {
+  if (typeof window === "undefined") return defaultFilters;
+  try {
+    const saved = sessionStorage.getItem(LIVE_FILTER_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === "object" && "period" in parsed) {
+        return {
+          ...defaultFilters,
+          ...parsed,
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return defaultFilters;
+}
+
+function mapRouteToSlideId(route: PageRoute): string {
+  switch (route) {
+    case "dashboard":
+      return "executive";
+    case "production":
+      return "production";
+    case "quality":
+      return "quality";
+    case "maintenance":
+      return "downtime";
+    case "kpi":
+      return "insights";
+    case "oee":
+      return "executive";
+    default:
+      return "executive";
+  }
+}
+
+const STUB_ROUTES: PageRoute[] = [
+  "ppc",
+  "scm",
+  "store",
+  "npd",
+  "hr",
+  "safety",
+  "logistics",
+  "5s",
+  "google-forms",
+  "actions",
+  "settings",
+];
+
 export function ManufacturingDashboard() {
   const { logout } = useAuth();
   const [activePage, setActivePage] = useState<PageRoute>(resolveHashRoute());
+  const [liveActiveSlideId, setLiveActiveSlideId] = useState<string>(() => mapRouteToSlideId(resolveHashRoute()));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [activeSlide, setActiveSlide] = useState<DashboardSlideKey | null>(() => {
     const hash = typeof window === "undefined" ? "" : window.location.hash;
     if (hash === "#/data-quality") return "data-quality";
@@ -844,9 +875,66 @@ export function ManufacturingDashboard() {
   const [uploadedAppliedFilters, setUploadedAppliedFilters] = useState<FilterState>(defaultFilters);
 
   // --- Live Google Sheets State (Google Sheets only) ---
+  // Filters are loaded from and synced to sessionStorage to persist across view navigation
   const [liveDataset, setLiveDataset] = useState<LiveDatasetState | null>(null);
-  const [liveDraftFilters, setLiveDraftFilters] = useState<FilterState>(defaultFilters);
-  const [liveAppliedFilters, setLiveAppliedFilters] = useState<FilterState>(defaultFilters);
+  /**
+   * True while the live Google Sheets dataset is being fetched and is not yet
+   * available. While true, the dashboard must NOT present the legacy mock/demo
+   * records as if they were live data (data-source honesty requirement): the
+   * Operations Control shows a "Loading live Google Sheets data…" state
+   * instead of mock-derived date bounds.
+   */
+  const [liveLoading, setLiveLoading] = useState<boolean>(true);
+  /**
+   * Reason the initial live connection could not be established, set ONLY when
+   * every bootstrap attempt has failed (after retries). While set (and not
+   * loading), the dashboard shows an explicit error state with a Retry button
+   * instead of a bare "No Live Google Sheets Connection" dead end.
+   */
+  const [liveLoadError, setLiveLoadError] = useState<string | null>(null);
+  const [liveDraftFilters, setLiveDraftFilters] = useState<FilterState>(getInitialLiveFilters);
+  const [liveAppliedFilters, setLiveAppliedFilters] = useState<FilterState>(getInitialLiveFilters);
+
+  /**
+   * AUTOMATIC vs CUSTOM date range mode.
+   *
+   * automatic (default): the Date Range end is always synchronized with
+   * latestSourceDate = MAX(valid dates in the live backend dataset). When the
+   * Google Sheet grows, the dashboard follows automatically — forever dynamic,
+   * never hard-coded, and NEVER taken from the system clock.
+   *
+   * custom: the user explicitly picked a Date Range; it is preserved across
+   * refreshes until they click "Latest Available Data" (or Reset).
+   */
+  const [autoDateMode, setAutoDateMode] = useState<boolean>(getInitialAutoDateMode);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(AUTO_DATE_MODE_STORAGE_KEY, autoDateMode ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [autoDateMode]);
+
+  // Sync applied live filters to sessionStorage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(LIVE_FILTER_STORAGE_KEY, JSON.stringify(liveAppliedFilters));
+    } catch {
+      // ignore
+    }
+  }, [liveAppliedFilters]);
+
+  // Synchronize browser URL hash changes with active page and slide
+  useEffect(() => {
+    const onHashChange = () => {
+      const route = resolveHashRoute();
+      setActivePage(route);
+      setLiveActiveSlideId(mapRouteToSlideId(route));
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   // Legacy dataset state — used only for backward compatibility with file upload
   const [dataset, setDataset] = useState<DashboardDatasetState | null>(null);
@@ -868,9 +956,21 @@ export function ManufacturingDashboard() {
   // Legacy googleSheetsStatus — kept for status display only
   const [googleSheetsStatus, setGoogleSheetsStatus] = useState<{ connected: boolean; source: string; worksheet: string; recordCount: number; lastUpdated: string | null; error: string | null } | null>(null);
 
-  // Live polling and auto-refresh state
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
   const pollingInterval = 60000; // 60 seconds default
+  const [currentTime, setCurrentTime] = useState<string>(() => {
+    const now = new Date();
+    return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [liveStatus, setLiveStatus] = useState<LiveSyncStatus>({
     state: 'idle',
     connected: false,
@@ -883,86 +983,135 @@ export function ManufacturingDashboard() {
   });
   const [currentSpreadsheetId, setCurrentSpreadsheetId] = useState<string>('');
 
+  /**
+   * Guard so only the LATEST bootstrap run may apply state. React StrictMode
+   * (dev) mounts effects twice, and a user can hit "Retry Connection" while an
+   * earlier run is still awaiting a response — without this guard a stale
+   * response could overwrite a newer one (race condition).
+   */
+  const bootstrapRunRef = useRef(0);
+
+  const bootstrapLiveConnection = useCallback(async () => {
+    const runId = bootstrapRunRef.current + 1;
+    bootstrapRunRef.current = runId;
+    const isLatestRun = () => bootstrapRunRef.current === runId;
+
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    // Backoff between attempts: a momentarily unavailable backend (still
+    // starting, network blip, proxy hiccup) must NOT become a permanent
+    // "No Live Google Sheets Connection" dead end.
+    const retryDelays = [1500, 3000, 6000];
+
+    setLiveLoading(true);
+    setLiveLoadError(null);
+
+    // --- STEP 1: backend Google Sheets status (with retry) ---
+    let status: ManufacturingConnectionStatus | null = null;
+    let lastError = "Unable to reach the backend service.";
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      try {
+        status = await fetchManufacturingStatus();
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : "Status request failed.";
+        if (attempt < retryDelays.length) await wait(retryDelays[attempt]);
+      }
+    }
+    if (!isLatestRun()) return;
+    if (!status) {
+      setLiveLoadError(lastError);
+      setLiveLoading(false);
+      return;
+    }
+
+    if (!(status.spreadsheetId && status.connectionStatus === "connected")) {
+      setLiveLoadError(
+        status.error || "The backend reports Google Sheets is not connected.",
+      );
+      setLiveLoading(false);
+      return;
+    }
+
+    // Setting the spreadsheet id also enables the manual Refresh control and
+    // the (optional) polling hook, and triggers the dataset load below.
+    setCurrentSpreadsheetId(status.spreadsheetId);
+  }, []);
+
   // Fetch backend Google Sheets configuration on mount to enable live polling
   // and auto-load the LIVE dataset so the dashboard shows live data immediately.
   // IMPORTANT: This ONLY updates liveDataset — never touches uploadedDataset.
   useEffect(() => {
-    fetchManufacturingStatus()
-      .then((status) => {
-        if (status.spreadsheetId && status.connectionStatus === "connected") {
-          setCurrentSpreadsheetId(status.spreadsheetId);
-          // Auto-fetch the dataset on mount so the dashboard is live immediately
-          return fetchManufacturingDataset(status.spreadsheetId, "Sheet1")
-            .then((data) => {
-              if (data.connectionStatus === "connected" && data.data.length > 0) {
-                const records = normalizeGoogleSheetRecords(data.data);
-                // STRICT SEPARATION: Only update liveDataset, never uploadedDataset
-                setLiveDataset({
-                  records,
-                  spreadsheetId: status.spreadsheetId,
-                  worksheet: data.worksheet || "Sheet1",
-                  recordCount: records.length,
-                  lastUpdated: data.lastUpdated,
-                  connectionStatus: "connected",
-                  error: null,
-                });
-                // Also update legacy status for display
-                setGoogleSheetsStatus({
-                  connected: true,
-                  source: "google-sheets",
-                  worksheet: data.worksheet || "Sheet1",
-                  recordCount: records.length,
-                  lastUpdated: data.lastUpdated,
-                  error: null,
-                });
-              }
-            });
-        }
-      })
-      .catch(() => {
-        // Backend may not have Google Sheets configured; ignore
-      });
-  }, []);
+    void bootstrapLiveConnection();
+  }, [bootstrapLiveConnection]);
 
   // Fetch (or re-fetch) the live Google Sheets dataset.
   // STRICT SEPARATION: Only updates liveDataset — never touches uploadedDataset.
-  const reloadLiveDataset = useCallback((spreadsheetId: string) => {
-    if (!spreadsheetId) return Promise.resolve();
-    return fetchManufacturingDataset(spreadsheetId, "Sheet1")
-      .then((data) => {
-        if (data.connectionStatus === "connected" && data.data.length > 0) {
-          const records = normalizeGoogleSheetRecords(data.data);
-          // Only update live dataset state
-          setLiveDataset({
-            records,
-            spreadsheetId,
-            worksheet: data.worksheet || "Sheet1",
-            recordCount: records.length,
-            lastUpdated: data.lastUpdated,
-            connectionStatus: "connected",
-            error: null,
-          });
-          // Also update legacy status for display
-          setGoogleSheetsStatus({
-            connected: true,
-            source: "google-sheets",
-            worksheet: data.worksheet || "Sheet1",
-            recordCount: records.length,
-            lastUpdated: data.lastUpdated,
-            error: null,
-          });
-        }
-      })
-      .catch(() => {
-        // Ignore fetch errors; dashboard will show existing data
-        setLiveDataset((prev => prev ? { ...prev, connectionStatus: "error" as const, error: "Failed to fetch" } : null));
+  // Retries transient failures; the INITIAL load (initial=true) surfaces a
+  // final failure through the explicit error state instead of dying silently.
+  const reloadLiveDataset = useCallback(async (spreadsheetId: string, options?: { initial?: boolean }) => {
+    if (!spreadsheetId) return;
+    const initial = options?.initial ?? false;
+
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const retryDelays = [1500, 3000, 6000];
+    let data: ManufacturingApiResponse | null = null;
+    let lastError = "Unable to load the live dataset.";
+
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      try {
+        data = await fetchManufacturingDataset(spreadsheetId, "Sheet1");
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : "Dataset request failed.";
+        if (attempt < retryDelays.length) await wait(retryDelays[attempt]);
+      }
+    }
+
+    if (data && data.connectionStatus === "connected" && data.data.length > 0) {
+      const records = normalizeGoogleSheetRecords(data.data);
+      // STRICT SEPARATION: Only update liveDataset, never uploadedDataset.
+      setLiveDataset({
+        records,
+        spreadsheetId,
+        worksheet: data.worksheet || "Sheet1",
+        recordCount: records.length,
+        lastUpdated: data.lastUpdated,
+        connectionStatus: "connected",
+        error: null,
       });
+      // Also update legacy status for display
+      setGoogleSheetsStatus({
+        connected: true,
+        source: "google-sheets",
+        worksheet: data.worksheet || "Sheet1",
+        recordCount: records.length,
+        lastUpdated: data.lastUpdated,
+        error: null,
+      });
+      if (initial) {
+        setLiveLoadError(null);
+        setLiveLoading(false);
+      }
+      return;
+    }
+
+    // Final failure (after retries).
+    if (initial) {
+      // No previous dataset to keep showing: surface the explicit error state.
+      setLiveLoadError(data?.error || lastError);
+      setLiveLoading(false);
+    } else {
+      // Background refresh with an existing dataset: keep showing the data
+      // but flag the connection state (never silently fake LIVE).
+      setLiveDataset((prev) => (prev ? { ...prev, connectionStatus: "error" as const, error: lastError } : prev));
+    }
   }, []);
 
-  // Fetch Google Sheets data when currentSpreadsheetId is set
+  // Fetch Google Sheets data when currentSpreadsheetId is set. The initial
+  // bootstrap path owns the loading/error state until the dataset arrives.
   useEffect(() => {
     if (!currentSpreadsheetId) return;
-    reloadLiveDataset(currentSpreadsheetId);
+    void reloadLiveDataset(currentSpreadsheetId, { initial: true });
   }, [currentSpreadsheetId, reloadLiveDataset]);
 
   useEffect(() => {
@@ -1000,7 +1149,31 @@ export function ManufacturingDashboard() {
     pollingInterval,
     enabled: autoRefreshEnabled && currentSpreadsheetId.length > 0,
     onDataUpdate: (response) => {
-      // When data changes, update the dashboard dataset
+      // When data changes (or a manual refresh completes), update BOTH the
+      // live dashboard dataset (which renders the analytics) and the legacy
+      // dataset. Fresh live API data always replaces stale state — persisted
+      // data can never override a successful live refresh.
+      if (response.connectionStatus === "connected" && response.data && response.data.length > 0) {
+        const records = normalizeGoogleSheetRecords(response.data);
+        setLiveDataset({
+          records,
+          spreadsheetId: response.spreadsheetId || currentSpreadsheetId,
+          worksheet: response.worksheet || "Sheet1",
+          recordCount: records.length,
+          lastUpdated: response.lastUpdated,
+          connectionStatus: "connected",
+          error: null,
+        });
+        setGoogleSheetsStatus({
+          connected: true,
+          source: "google-sheets",
+          worksheet: response.worksheet || "Sheet1",
+          recordCount: records.length,
+          lastUpdated: response.lastUpdated,
+          error: null,
+        });
+      }
+      // Legacy dataset (backward compatibility with existing render functions)
       if (response.data && response.data.length > 0) {
         const records = normalizeGoogleSheetRecords(response.data);
         const updatedPayload: DashboardDatasetState = {
@@ -1031,17 +1204,173 @@ export function ManufacturingDashboard() {
   // Legacy records — used for backward compatibility with existing render functions
   const records = useMemo(() => (dataset?.records?.length ? dataset.records : mockRecords), [dataset]);
 
+  // Legacy filter options and filtered records
+  const filterOptions = useMemo(() => buildFilterOptions(records), [records]);
+  const filteredRecords = useMemo(() => applyFilters(records, liveAppliedFilters), [records, liveAppliedFilters]);
+
   // Filter options for each source
   const importedFilterOptions = useMemo(() => buildFilterOptions(importedRecords), [importedRecords]);
   const liveFilterOptions = useMemo(() => buildFilterOptions(liveRecords), [liveRecords]);
+  /**
+   * Deliberately EMPTY filter options (no dates, no stages). Used while the
+   * live Google Sheets dataset is still loading so Operations Control never
+   * presents the legacy mock records' date bounds as if they were live data.
+   */
+  const emptyFilterOptions = useMemo(() => buildFilterOptions([]), []);
+
+  const displayMaxDate = useMemo(() => {
+    const rawMax = liveFilterOptions.maxDate || (liveRecords.length > 0 ? datasetDateBounds(liveRecords).maxDate : "");
+    if (rawMax) return formatDisplayDate(rawMax);
+    if (uploadedDataset && importedFilterOptions.maxDate) {
+      return formatDisplayDate(importedFilterOptions.maxDate);
+    }
+    return null;
+  }, [liveFilterOptions.maxDate, liveRecords, uploadedDataset, importedFilterOptions.maxDate]);
+
+  // Reference to track the previous source max date for intelligent forward-sync
+  const previousMaxDateRef = useRef<string>("");
+  // Tracks if the user explicitly chose an end date before the latest source date
+  const isCustomEndDateRef = useRef<boolean>(false);
+
+  /**
+   * Draft filter change handler:
+   * - Manual changes to dateFrom (e.g. 2026-01-01) are preserved as custom start dates.
+   * - If dateTo is explicitly set to a past date (less than latest source date),
+   *   it is flagged as a custom range so future refreshes preserve it.
+   * - If dateTo equals or exceeds maxDate (or is cleared), it continues tracking the latest source date.
+   */
+  const handleLiveDraftChange = useCallback(
+    (next: FilterState) => {
+      const currentMax = liveFilterOptions.maxDate;
+      if (next.dateTo && currentMax && next.dateTo < currentMax) {
+        // User explicitly picked a past end date (custom range protection)
+        isCustomEndDateRef.current = true;
+        setAutoDateMode(false);
+      } else if (next.dateTo && currentMax && next.dateTo >= currentMax) {
+        // User picked the latest available date
+        isCustomEndDateRef.current = false;
+      }
+      if (next.dateFrom && next.dateFrom !== liveFilterOptions.minDate) {
+        setAutoDateMode(false);
+      }
+      setLiveDraftFilters(next);
+    },
+    [liveFilterOptions.maxDate, liveFilterOptions.minDate],
+  );
+
+  /**
+   * "Latest Available Data": return to automatic mode and synchronize the
+   * Date Range with the full live source range (min → latest source date).
+   */
+  const handleLatestAvailableData = useCallback(() => {
+    const options = liveDataset ? liveFilterOptions : filterOptions;
+    const latestFilters: FilterState = {
+      ...liveDraftFilters,
+      dateFrom: options.minDate,
+      dateTo: options.maxDate,
+    };
+    isCustomEndDateRef.current = false;
+    setAutoDateMode(true);
+    setLiveDraftFilters(latestFilters);
+    setLiveAppliedFilters(latestFilters);
+  }, [liveDataset, liveFilterOptions, filterOptions, liveDraftFilters]);
+
+  /**
+   * DYNAMIC DATE RANGE SYNC — the core latest-source-date mechanism.
+   *
+   * Automatically advances dateTo whenever the Google Sheet grows and exposes a
+   * newer maxSourceDate:
+   * - If dateTo was tracking the latest date (or equal to previous max date, or
+   *   stale 2026-09-03 from sessionStorage, or autoDateMode), advance to new maxDate.
+   * - The user's custom dateFrom (e.g. 2026-01-01) is PRESERVED.
+   * - If the user deliberately selected a past date range (dateTo < prevMax),
+   *   their custom range is PROTECTED and never overwritten.
+   * - If dateTo > newMax, it is clamped to newMax.
+   */
+  useEffect(() => {
+    const { minDate, maxDate } = liveFilterOptions;
+    if (!maxDate) return;
+
+    const prevMax = previousMaxDateRef.current;
+    previousMaxDateRef.current = maxDate;
+
+    setLiveDraftFilters((prev) => {
+      let nextDateTo = prev.dateTo;
+      let nextDateFrom = prev.dateFrom;
+
+      const shouldAdvanceToMax =
+        !prev.dateTo ||
+        autoDateMode ||
+        !isCustomEndDateRef.current ||
+        prev.dateTo === prevMax ||
+        prev.dateTo === "2026-09-03" ||
+        prev.dateTo > maxDate;
+
+      if (shouldAdvanceToMax) {
+        nextDateTo = maxDate;
+      }
+
+      if (autoDateMode) {
+        nextDateFrom = minDate;
+      }
+
+      if (nextDateTo === prev.dateTo && nextDateFrom === prev.dateFrom) {
+        return prev;
+      }
+      return { ...prev, dateFrom: nextDateFrom, dateTo: nextDateTo };
+    });
+
+    setLiveAppliedFilters((prev) => {
+      let nextDateTo = prev.dateTo;
+      let nextDateFrom = prev.dateFrom;
+
+      const shouldAdvanceToMax =
+        !prev.dateTo ||
+        autoDateMode ||
+        !isCustomEndDateRef.current ||
+        prev.dateTo === prevMax ||
+        prev.dateTo === "2026-09-03" ||
+        prev.dateTo > maxDate;
+
+      if (shouldAdvanceToMax) {
+        nextDateTo = maxDate;
+      }
+
+      if (autoDateMode) {
+        nextDateFrom = minDate;
+      }
+
+      if (nextDateTo === prev.dateTo && nextDateFrom === prev.dateFrom) {
+        return prev;
+      }
+      return { ...prev, dateFrom: nextDateFrom, dateTo: nextDateTo };
+    });
+  }, [autoDateMode, liveFilterOptions]);
+
+  // Resolve active period window for live filters
+  const livePeriodWindow = useMemo(() => {
+    return resolvePeriodWindow(liveAppliedFilters.period, {
+      start: liveAppliedFilters.dateFrom,
+      end: liveAppliedFilters.dateTo,
+    });
+  }, [liveAppliedFilters.period, liveAppliedFilters.dateFrom, liveAppliedFilters.dateTo]);
 
   // Filtered records for each source
   const filteredImportedRecords = useMemo(() => applyFilters(importedRecords, uploadedAppliedFilters), [importedRecords, uploadedAppliedFilters]);
   const filteredLiveRecords = useMemo(() => applyFilters(liveRecords, liveAppliedFilters), [liveRecords, liveAppliedFilters]);
 
-  // Legacy filter options and filtered records
-  const filterOptions = useMemo(() => buildFilterOptions(records), [records]);
-  const filteredRecords = useMemo(() => applyFilters(records, liveAppliedFilters), [records, liveAppliedFilters]);
+  // Sliced previous period records matching the exact same Line, Shift, Work Center, Material filters
+  const filteredPreviousLiveRecords = useMemo(() => {
+    if (!livePeriodWindow.previous.start || !livePeriodWindow.previous.end) {
+      return [];
+    }
+    const previousFilters: FilterState = {
+      ...liveAppliedFilters,
+      dateFrom: livePeriodWindow.previous.start,
+      dateTo: livePeriodWindow.previous.end,
+    };
+    return applyFilters(liveRecords, previousFilters);
+  }, [liveRecords, liveAppliedFilters, livePeriodWindow]);
 
   const productionKpis = useMemo(() => calculateProductionKpis(filteredRecords), [filteredRecords]);
   const oeeSummary = useMemo(() => calculateOeeSummary(filteredRecords), [filteredRecords]);
@@ -1057,12 +1386,12 @@ export function ManufacturingDashboard() {
   const filteredAnalysis = useMemo(() => calculateManufacturingAnalysis(filteredRecords), [filteredRecords]);
 
   // ===== Dashboard analytics carousel =====
-  // Uses LIVE records only — strict separation from imported data
-  const carouselAnalytics = useDashboardAnalytics(filteredLiveRecords);
+  const effectiveLiveForAnalytics = filteredLiveRecords.length > 0 ? filteredLiveRecords : filteredRecords;
+  const carouselAnalytics = useDashboardAnalytics(effectiveLiveForAnalytics, filteredPreviousLiveRecords, livePeriodWindow);
 
   // Data-quality summary for the Insights slide (business-dimension checks).
   const carouselDataQuality = useMemo(() => {
-    const q = analyzeBusinessDataQuality(filteredLiveRecords);
+    const q = analyzeBusinessDataQuality(effectiveLiveForAnalytics);
     return {
       totalRecords: q.totalRecords,
       validRecords: Math.max(0, q.totalRecords - q.missingDate - q.invalidDate),
@@ -1071,8 +1400,8 @@ export function ManufacturingDashboard() {
       missingLine: q.missingLine,
       missingShift: q.missingShift,
       missingPart: q.unmappedMaterialPartValues.length,
-      missingStage: filteredLiveRecords.filter((row) => !row.rawStage?.trim()).length,
-      missingMachine: filteredLiveRecords.filter((row) => !row.machineName?.trim() && !row.machineNo?.trim()).length,
+      missingStage: effectiveLiveForAnalytics.filter((row) => !row.rawStage?.trim()).length,
+      missingMachine: effectiveLiveForAnalytics.filter((row) => !row.machineName?.trim() && !row.machineNo?.trim()).length,
       unmappedWorkCenter: q.unmappedWorkCenter,
       duplicateRows: q.duplicateRows,
     };
@@ -1080,8 +1409,25 @@ export function ManufacturingDashboard() {
 
   const carouselSlides: CarouselSlide[] = useMemo(
     () => [
-      { id: "executive", title: "Executive Overview", icon: "📊", content: <ExecutiveOverviewSlide analytics={carouselAnalytics} /> },
-      { id: "production", title: "Production Performance", icon: "🏭", content: <ProductionSlide analytics={carouselAnalytics} /> },
+      { id: "executive", title: "Executive Overview", icon: "📊", content: <ExecutiveOverviewSlide analytics={carouselAnalytics} activeFilters={liveAppliedFilters} /> },
+      { id: "production", title: "Production Performance", icon: "🏭", content: <ProductionSlide analytics={carouselAnalytics} onNavigateSlide={(slideId) => setLiveActiveSlideId(slideId)} /> },
+      {
+        id: "target-gap",
+        title: "Target / Gap Analysis",
+        icon: "🎯",
+        content: (
+          <TargetGapAnalysisSlide
+            records={filteredLiveRecords.length > 0 ? filteredLiveRecords : filteredRecords}
+            filters={liveAppliedFilters}
+            analytics={carouselAnalytics}
+            onPeriodChange={(period) => {
+              const updated = { ...liveAppliedFilters, period };
+              setLiveAppliedFilters(updated);
+              setLiveDraftFilters(updated);
+            }}
+          />
+        ),
+      },
       { id: "prod-loss", title: "Production Loss", icon: "📉", content: <ProductionLossSlide analytics={carouselAnalytics} /> },
       { id: "downtime", title: "Downtime Command Center", icon: "⏱", content: <DowntimeCommandCenterSlide analytics={carouselAnalytics} /> },
       { id: "downtime-root", title: "Downtime Root Cause", icon: "🔍", content: <DowntimeRootCauseSlide analytics={carouselAnalytics} /> },
@@ -1095,7 +1441,7 @@ export function ManufacturingDashboard() {
       { id: "relationship", title: "Downtime vs Loss", icon: "🔗", content: <RelationshipSlide analytics={carouselAnalytics} /> },
       { id: "insights", title: "Management Insights", icon: "💡", content: <ManagementInsightsSlide analytics={carouselAnalytics} dataQuality={carouselDataQuality} /> },
     ],
-    [carouselAnalytics, carouselDataQuality]
+    [carouselAnalytics, carouselDataQuality, liveAppliedFilters, filteredLiveRecords]
   );
 
   const topDowntimeReason = downtime.byReason[0]?.key ?? null;
@@ -1978,16 +2324,35 @@ export function ManufacturingDashboard() {
   };
 
   return (
-    <div className="factory-layout">
-      <aside className="sidebar">
-        <div className="sidebar__brand">
-        <img src="/patil-logo.png" alt="Patil Group" className="brand-mark" />
-          <div>
-            <div className="brand-name">Patil Group</div>
-            <small>Manufacturing Dashboard</small>
-          </div>
-        </div>
+    <div className={`factory-layout ${sidebarCollapsed ? "factory-layout--sidebar-collapsed" : ""}`}>
+      {/* Mobile Drawer Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
+      <aside className={`sidebar ${sidebarCollapsed ? "sidebar--collapsed" : ""} ${mobileMenuOpen ? "sidebar--mobile-open" : ""}`}>
+        <div className="sidebar__brand">
+          <img src="/patil-logo.png" alt="Patil Group" className="brand-mark" />
+          {!sidebarCollapsed && (
+            <div className="sidebar__brand-text">
+              <div className="brand-name">Patil Group</div>
+              <small>Manufacturing Dashboard</small>
+            </div>
+          )}
+          <button
+            type="button"
+            className="sidebar__collapse-btn"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? "»" : "«"}
+          </button>
+        </div>
 
         <nav className="sidebar__nav" aria-label="Sidebar navigation">
           {navItems.map((item) => (
@@ -2000,62 +2365,165 @@ export function ManufacturingDashboard() {
                 window.location.hash = `#/${item.key}`;
                 setActivePage(item.key);
                 setActiveSlide(item.key === "data-import" ? "data-import" : dashboardSlides.find((slide) => slide.page === item.key)?.key ?? null);
+                setLiveActiveSlideId(mapRouteToSlideId(item.key));
+                setMobileMenuOpen(false);
               }}
             >
               <span className="nav-item__icon">{item.icon}</span>
-              <span>{item.label}</span>
+              {!sidebarCollapsed && <span className="nav-item__label">{item.label}</span>}
             </button>
           ))}
         </nav>
+
+        <div className="sidebar__footer">
+          <div className="sidebar__user">
+            <span className="sidebar__user-avatar">PL</span>
+            {!sidebarCollapsed && (
+              <div className="sidebar__user-details">
+                <span className="sidebar__user-name">Plant Lead</span>
+                <span className="sidebar__user-shift">{liveAppliedFilters.shift === "All Shifts" ? "All Shifts" : liveAppliedFilters.shift}</span>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="sidebar__signout-btn"
+            onClick={logout}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </div>
       </aside>
 
       <main className="dashboard-shell">
-        <header className="topbar">
-          <div className="topbar__branding">
-            <div className="topbar__brand-mark" aria-label="Patil Group">PG</div>
-            <div>
-              <p className="eyebrow">Patil Group</p>
-              <h1>{dashboardSlides.find((slide) => slide.key === activeSlide)?.title ?? routeToTitle[activePage]}</h1>
+        {/* ===================================================================
+            1. EXECUTIVE DASHBOARD HEADER (Top of Dashboard)
+            Compact Light SaaS Executive Theme with Patil Branding & Live Status
+            =================================================================== */}
+        <header className="exec-header">
+          <div className="exec-header__left">
+            <button
+              type="button"
+              className="sidebar-mobile-toggle"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label="Toggle navigation menu"
+            >
+              ☰
+            </button>
+            <img
+              src="/patil-logo.png"
+              alt="Patil Group"
+              className="exec-header__logo"
+            />
+            <div className="exec-header__branding">
+              <span className="exec-header__eyebrow">PATIL GROUP</span>
+              <h1 className="exec-header__title">Manufacturing Performance Dashboard</h1>
+              <p className="exec-header__subtitle">
+                Live manufacturing performance, production, quality and downtime analytics
+              </p>
             </div>
           </div>
 
-          <div className="topbar__right">
+          <div className="exec-header__right">
+            {/* Compact Live Status Badge */}
             {liveDataset?.connectionStatus === "connected" ? (
-              <div className="status-block status-block--live" title={`Google Sheets: ${liveDataset.worksheet} • ${liveDataset.recordCount} records`}>
-                <span className="status-dot status-dot--live" />
-                Google Sheets
+              <div className="exec-header__status-badge exec-header__status-badge--live">
+                <span className="exec-header__dot exec-header__dot--live" aria-hidden="true" />
+                <span>● LIVE GOOGLE SHEETS</span>
               </div>
-            ) : liveDataset?.connectionStatus === "error" ? (
-              <div className="status-block status-block--stale" title={liveDataset.error ?? "Connection error"}>
-                <span className="status-dot status-dot--stale" />
-                Sheets Offline
-              </div>
-            ) : uploadedDataset ? (
-              <div className="status-block status-block--imported" title={`Uploaded: ${uploadedDataset.fileName}`}>
-                <span className="status-dot status-dot--imported" />
-                Uploaded Data
+            ) : liveDataset?.connectionStatus === "error" || liveStatus.state === "error" ? (
+              <div className="exec-header__status-badge exec-header__status-badge--error">
+                <span className="exec-header__dot exec-header__dot--error" aria-hidden="true" />
+                <span>● DATA CONNECTION ISSUE</span>
               </div>
             ) : (
-              <div className="status-block">
-                <span className="status-dot status-dot--idle" />
-                No Data
+              <div className="exec-header__status-badge exec-header__status-badge--syncing">
+                <span className="exec-header__dot exec-header__dot--syncing" aria-hidden="true" />
+                <span>↻ SYNCING DATA</span>
               </div>
             )}
-            <div className="topbar__meta">
-              <span>{new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>
-              <span>{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-            </div>
-            <button type="button" className="btn btn--ghost">Alerts (5)</button>
-            <div className="user-badge">
-              <span className="user-badge__avatar">PL</span>
-              <div>
-                <strong>Plant Lead</strong>
-                <small>{liveAppliedFilters.shift === "All Shifts" ? "All" : liveAppliedFilters.shift}</small>
+
+            {/* Compact User Profile Pill with Sign Out */}
+            <div className="exec-header__user-pill" title="Plant Lead session">
+              <span className="exec-user-avatar">PL</span>
+              <div className="exec-user-info">
+                <strong className="exec-user-name">Plant Lead</strong>
+                <span className="exec-user-shift">{liveAppliedFilters.shift === "All Shifts" ? "All Shifts" : liveAppliedFilters.shift}</span>
               </div>
+              <button
+                type="button"
+                className="exec-user-signout"
+                onClick={logout}
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </button>
             </div>
-            <button type="button" className="btn btn--ghost" onClick={logout}>Sign out</button>
           </div>
         </header>
+
+        {/* ===================================================================
+            2. COMPACT LIVE STATUS STRIP (Directly Below Header)
+            =================================================================== */}
+        {liveDataset && (
+          <div className="live-status-strip" role="status" aria-label="Live dataset synchronization status">
+            <div className="live-status-strip__item">
+              <span className="live-status-strip__dot">●</span>
+              <strong className="live-status-strip__live-text">LIVE</strong>
+            </div>
+            <span className="live-status-strip__sep">•</span>
+            <div className="live-status-strip__item">
+              <span className="live-status-strip__label">Source:</span>
+              <span className="live-status-strip__val">Google Sheets</span>
+            </div>
+            <span className="live-status-strip__sep">•</span>
+            <div className="live-status-strip__item">
+              <span className="live-status-strip__label">Records:</span>
+              <strong className="live-status-strip__val">{liveDataset.recordCount.toLocaleString()}</strong>
+            </div>
+            {displayMaxDate && (
+              <>
+                <span className="live-status-strip__sep">•</span>
+                <div className="live-status-strip__item">
+                  <span className="live-status-strip__label">Data through:</span>
+                  <strong className="live-status-strip__val">{displayMaxDate}</strong>
+                </div>
+              </>
+            )}
+            <span className="live-status-strip__sep">•</span>
+            <div className="live-status-strip__item">
+              <span className="live-status-strip__label">Updated:</span>
+              <span className="live-status-strip__val">
+                {liveDataset.lastUpdated
+                  ? `${new Date(liveDataset.lastUpdated).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}, ${new Date(liveDataset.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} IST`
+                  : `${currentTime} IST`}
+              </span>
+            </div>
+            <div className="live-status-strip__action">
+              <button
+                type="button"
+                className="live-status-strip__refresh-btn"
+                onClick={() => void refreshData()}
+                disabled={liveStatus.state === "syncing" || googleSheetsLoading}
+                title="Refresh live Google Sheets data"
+              >
+                <span className={liveStatus.state === "syncing" || googleSheetsLoading ? "exec-spin" : ""} aria-hidden="true">↻</span>
+                <span>{liveStatus.state === "syncing" || googleSheetsLoading ? "Refreshing..." : "Refresh"}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {activePage === "data-import" ? (
           <>
@@ -2094,14 +2562,80 @@ export function ManufacturingDashboard() {
               </div>
             )}
           </>
+        ) : STUB_ROUTES.includes(activePage) ? (
+          <div className="module-stub-panel" role="status">
+            <div className="module-stub-card">
+              <span className="module-stub-badge">MODULE STATUS: PENDING ERP INTEGRATION</span>
+              <h2>{routeToTitle[activePage]}</h2>
+              <p>
+                This module is documented in <code>docs/NAVIGATION_STATUS.md</code> as pending department ERP / Google Form integration.
+              </p>
+              <p>
+                Live production, downtime, loss, quality, line, and work center analytics from the Medchal plant are active in the operations dashboard.
+              </p>
+              <div style={{ marginTop: "1.25rem" }}>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => {
+                    window.location.hash = "#/dashboard";
+                    setActivePage("dashboard");
+                    setLiveActiveSlideId("executive");
+                  }}
+                >
+                  Return to Live Operations Overview
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
           <>
-            {/* ===== OVERVIEW / LIVE PAGES — live dashboard only ===== */}
-            {/* The imported dataset dashboard is intentionally NOT rendered here.
-                It belongs exclusively to the Data Import page. */}
+            {/* ===================================================================
+                2. OPERATIONS CONTROL (FILTERS) — DIRECTLY BELOW EXECUTIVE HEADER
+                =================================================================== */}
+            <div className="dashboard-filters-wrapper">
+              <FilterBar
+                filters={liveDraftFilters}
+                onChange={handleLiveDraftChange}
+                onApply={() => setLiveAppliedFilters(liveDraftFilters)}
+                onLatestData={handleLatestAvailableData}
+                autoDateMode={autoDateMode}
+                onReset={() => {
+                  const options = liveDataset ? liveFilterOptions : filterOptions;
+                  const resetFilters: FilterState = {
+                    ...defaultFilters,
+                    period: "monthly",
+                    dateFrom: options.minDate,
+                    dateTo: options.maxDate,
+                  };
+                  isCustomEndDateRef.current = false;
+                  setAutoDateMode(true);
+                  setLiveDraftFilters(resetFilters);
+                  setLiveAppliedFilters(resetFilters);
+                  try {
+                    sessionStorage.setItem(LIVE_FILTER_STORAGE_KEY, JSON.stringify(resetFilters));
+                  } catch {
+                    // ignore
+                  }
+                }}
+                options={liveDataset ? liveFilterOptions : liveLoading ? emptyFilterOptions : filterOptions}
+                loadingLive={liveLoading && !liveDataset}
+              />
+              {liveRecords.length > 0 && filteredLiveRecords.length === 0 ? (
+                <div className="filter-empty-banner" role="status">
+                  No records match the active filters. Adjust the Date Range, Line, Shift, Stage, Machine, or Material filters, or press Reset.
+                </div>
+              ) : null}
+            </div>
+
+            {/* ===================================================================
+                3. DASHBOARD CHARTS — LIVE GOOGLE SHEETS SECTION
+                =================================================================== */}
             {liveDataset ? (
               <LiveGoogleSheetsSection
                 records={filteredLiveRecords}
+                previousRecords={filteredPreviousLiveRecords}
+                periodWindow={livePeriodWindow}
                 spreadsheetId={liveDataset.spreadsheetId}
                 worksheet={liveDataset.worksheet}
                 recordCount={liveDataset.recordCount}
@@ -2109,66 +2643,68 @@ export function ManufacturingDashboard() {
                 connectionStatus={liveDataset.connectionStatus}
                 error={liveDataset.error}
                 filters={liveDraftFilters}
-                onFiltersChange={setLiveDraftFilters}
+                onFiltersChange={handleLiveDraftChange}
+                hideTopBanners={true}
                 onApplyFilters={() => setLiveAppliedFilters(liveDraftFilters)}
                 onResetFilters={() => {
                   const resetFilters: FilterState = {
                     ...defaultFilters,
+                    period: "monthly",
                     dateFrom: liveFilterOptions.minDate,
                     dateTo: liveFilterOptions.maxDate,
                   };
+                  isCustomEndDateRef.current = false;
+                  setAutoDateMode(true);
                   setLiveDraftFilters(resetFilters);
                   setLiveAppliedFilters(resetFilters);
+                  try {
+                    sessionStorage.setItem(LIVE_FILTER_STORAGE_KEY, JSON.stringify(resetFilters));
+                  } catch {
+                    // ignore
+                  }
                 }}
-                onRefresh={() => reloadLiveDataset(currentSpreadsheetId)}
-                isRefreshing={googleSheetsLoading}
+                onRefresh={() => {
+                  void refreshData();
+                }}
+                isRefreshing={liveStatus.state === "syncing" || googleSheetsLoading}
+                activeSlideId={liveActiveSlideId}
+                onSlideChange={setLiveActiveSlideId}
               />
+            ) : liveLoading ? (
+              <div className="live-empty-state" role="status" aria-live="polite">
+                <div className="live-empty-state__icon live-empty-state__icon--loading" aria-hidden="true">↻</div>
+                <h3>Loading Live Google Sheets Data…</h3>
+                <p>
+                  Fetching the live manufacturing dataset from the backend. Large sheets
+                  can take a few seconds — analytics appear as soon as the data arrives.
+                </p>
+              </div>
             ) : (
-              <div className="live-empty-state">
+              <div className="live-empty-state" role="alert">
                 <div className="live-empty-state__icon">⚠</div>
                 <h3>No Live Google Sheets Connection</h3>
-                <p>Connect to Google Sheets to see live manufacturing analytics.</p>
+                <p>
+                  {liveLoadError
+                    ? `The live dataset could not be loaded after several attempts. Reason: ${liveLoadError}`
+                    : "Connect to Google Sheets to see live manufacturing analytics."}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--primary live-empty-state__retry"
+                  onClick={() => void bootstrapLiveConnection()}
+                >
+                  Retry Connection
+                </button>
               </div>
             )}
 
             {/* Legacy carousel — kept for backward compatibility when no live dataset */}
-            {!liveDataset && activeSlide !== "data-quality" && activeSlide && (
+            {!liveDataset && !liveLoading && activeSlide !== "data-quality" && activeSlide && (
               <DashboardCarousel slides={carouselSlides} />
             )}
 
             {/* Data Quality slide (live context) */}
             {activeSlide === "data-quality" ? renderAnalyticsSlide(activeSlide) : null}
-
-            {/* Filtered-out notice — belongs with the analytics, ABOVE Operations Control */}
-            {liveRecords.length > 0 && filteredLiveRecords.length === 0 ? (
-              <div className="filter-empty-banner" role="status">
-                No records match the active filters. Adjust the Date Range, Line, Shift, Work Center, or Material filters, or press Reset.
-              </div>
-            ) : null}
-
-            {/* ===== OPERATIONS CONTROL =====
-                Bottom of the Overview page — rendered AFTER the live analytics
-                carousel. Single instance; controls ONLY the live dataset via
-                liveDraftFilters/liveAppliedFilters. It never touches the Data
-                Import page or the imported dataset filters. */}
-            <FilterBar
-              filters={liveDraftFilters}
-              onChange={setLiveDraftFilters}
-              onApply={() => setLiveAppliedFilters(liveDraftFilters)}
-              onReset={() => {
-                // Reset ONLY the Overview/live filters — the imported dataset,
-                // Data Import filters, and the live connection are untouched.
-                const options = liveDataset ? liveFilterOptions : filterOptions;
-                const resetFilters: FilterState = {
-                  ...defaultFilters,
-                  dateFrom: options.minDate,
-                  dateTo: options.maxDate,
-                };
-                setLiveDraftFilters(resetFilters);
-                setLiveAppliedFilters(resetFilters);
-              }}
-              options={liveDataset ? liveFilterOptions : filterOptions}
-            />
           </>
         )}
       </main>

@@ -1,4 +1,4 @@
-﻿"""Application service layer (pure calculators and orchestration)."""
+"""Application service layer (pure calculators and orchestration)."""
 
 from app.services.flexible_workbook_ingestion import (
     ingest_flexible_csv,

@@ -23,33 +23,33 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any
 from uuid import UUID
 
 from openpyxl import load_workbook
-from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models.downtime_event import DowntimeEvent
-from app.models.downtime_reason import DowntimeReason
 from app.models.import_job import ImportJob
 from app.models.import_job_row import ImportJobRow
 from app.models.machine import Machine
 from app.models.machine_status import MachineStatus
 from app.models.machine_type import MachineType
-from app.models.operator import Operator
 from app.models.part import Part
 from app.models.plant import Plant
 from app.models.production_record import ProductionRecord
-from app.models.rejection_event import RejectionEvent
-from app.models.rejection_reason import RejectionReason
 from app.models.shift import Shift
-from app.services.oee_persistence import persist_production_record_metrics
 
 # Column aliases: normalized header → canonical field name
 _CANONICAL_ALIASES: Mapping[str, list[str]] = {
-    "date": ["date", "production date", "production_date", "prod date", "shift date", "date of production"],
+    "date": [
+        "date",
+        "production date",
+        "production_date",
+        "prod date",
+        "shift date",
+        "date of production",
+    ],
     "line": ["line", "production line", "prod line", "line name", "line_name"],
     "shift": ["shift", "shift name", "shift_name", "shift code"],
     "machine": ["machine", "machine name", "machine_name", "machine no", "machine_no", "m/c", "mc"],
@@ -64,7 +64,15 @@ _CANONICAL_ALIASES: Mapping[str, list[str]] = {
         "total prod nos",
         "produced pcs",
     ],
-    "target": ["target", "production target", "prod target", "target qty", "target nos", "planned qty", "prod target nos"],
+    "target": [
+        "target",
+        "production target",
+        "prod target",
+        "target qty",
+        "target nos",
+        "planned qty",
+        "prod target nos",
+    ],
     "downtime": [
         "downtime",
         "idle time",
@@ -84,7 +92,13 @@ _CANONICAL_ALIASES: Mapping[str, list[str]] = {
         "defective qty",
         "total rejection (pcs qty.)",
     ],
-    "availability": ["availability", "availability ratio", "operating time", "run time", "availability %"],
+    "availability": [
+        "availability",
+        "availability ratio",
+        "operating time",
+        "run time",
+        "availability %",
+    ],
     "performance": [
         "performance",
         "performance ratio",
@@ -159,7 +173,15 @@ def _coerce_date(value: Any) -> str | None:
             return None
 
         # Try common formats
-        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d", "%d/%m/%y", "%m/%d/%y"):
+        for fmt in (
+            "%Y-%m-%d",
+            "%d-%m-%Y",
+            "%m/%d/%Y",
+            "%d/%m/%Y",
+            "%Y/%m/%d",
+            "%d/%m/%y",
+            "%m/%d/%y",
+        ):
             try:
                 return datetime.strptime(stripped, fmt).date().isoformat()
             except ValueError:
@@ -179,7 +201,7 @@ def _coerce_number(value: Any) -> float | None:
     if value is None or value == "":
         return None
 
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int | float) and not isinstance(value, bool):
         return float(value)
 
     if isinstance(value, str):
@@ -196,7 +218,6 @@ def _coerce_number(value: Any) -> float | None:
 
 def _select_best_sheet(workbook) -> str:
     """Auto-select the most likely manufacturing data sheet."""
-    import openpyxl.utils
 
     sheet_scores = []
     for sheet_name in workbook.sheetnames:
@@ -331,7 +352,9 @@ def ingest_flexible_workbook(
     data_start_idx = header_row_idx + 1
 
     # Build header mapping
-    headers: list[str | None] = [_normalize_header(str(cell)) if cell else None for cell in header_row]
+    headers: list[str | None] = [
+        _normalize_header(str(cell)) if cell else None for cell in header_row
+    ]
 
     # Map headers to canonical fields
     column_map: dict[int, str] = {}  # col_idx → canonical_field
@@ -376,7 +399,12 @@ def ingest_flexible_workbook(
         db.execute(delete(ImportJobRow).where(ImportJobRow.import_job_id == import_job_id))
         db.flush()
     else:
-        job = ImportJob(source_type="excel", file_uri=str(file_path), status="processing", uploaded_by=uploaded_by)
+        job = ImportJob(
+            source_type="excel",
+            file_uri=str(file_path),
+            status="processing",
+            uploaded_by=uploaded_by,
+        )
         db.add(job)
         db.flush()
 
@@ -414,14 +442,18 @@ def ingest_flexible_workbook(
                 rejection_qty = row_data.get("rejection") or 0
 
                 # Get or create masters.
-                machine = db.scalar(select(Machine).where(Machine.plant_id == plant_id, Machine.name == machine_name))
+                machine = db.scalar(
+                    select(Machine).where(
+                        Machine.plant_id == plant_id, Machine.name == machine_name
+                    )
+                )
                 if not machine:
                     default_type = db.scalar(
-                    select(MachineType).where(MachineType.code == "GENERIC")
-                )
+                        select(MachineType).where(MachineType.code == "GENERIC")
+                    )
                     default_status = db.scalar(
-                    select(MachineStatus).where(MachineStatus.code == "ACTIVE")
-                )
+                        select(MachineStatus).where(MachineStatus.code == "ACTIVE")
+                    )
                     machine = Machine(
                         plant_id=plant_id,
                         code=machine_name,
@@ -432,7 +464,9 @@ def ingest_flexible_workbook(
                     db.add(machine)
                     db.flush()
 
-                shift = db.scalar(select(Shift).where(Shift.plant_id == plant_id, Shift.code == shift_code))
+                shift = db.scalar(
+                    select(Shift).where(Shift.plant_id == plant_id, Shift.code == shift_code)
+                )
                 if not shift:
                     shift = Shift(
                         plant_id=plant_id,
@@ -471,17 +505,19 @@ def ingest_flexible_workbook(
                 )
 
                 existing_rec = db.scalar(
-                    select(ProductionRecord).where(ProductionRecord.external_row_key == external_row_key)
+                    select(ProductionRecord).where(
+                        ProductionRecord.external_row_key == external_row_key
+                    )
                 )
                 if existing_rec is not None:
                     prod_rec = existing_rec
                     custom = dict(prod_rec.custom_fields or {})
-                    custom["downtime"] = (
-                    float(custom.get("downtime") or 0) + float(downtime_minutes or 0)
-                )
-                    custom["rejection"] = (
-                    float(custom.get("rejection") or 0) + float(rejection_qty or 0)
-                )
+                    custom["downtime"] = float(custom.get("downtime") or 0) + float(
+                        downtime_minutes or 0
+                    )
+                    custom["rejection"] = float(custom.get("rejection") or 0) + float(
+                        rejection_qty or 0
+                    )
                     custom["raw_rows"] = int(custom.get("raw_rows") or 0) + 1
                     if target_qty is not None:
                         custom["target"] = float(target_qty)
@@ -627,7 +663,9 @@ def ingest_flexible_csv(
         db.execute(delete(ImportJobRow).where(ImportJobRow.import_job_id == import_job_id))
         db.flush()
     else:
-        job = ImportJob(source_type="csv", file_uri="uploaded.csv", status="processing", uploaded_by=uploaded_by)
+        job = ImportJob(
+            source_type="csv", file_uri="uploaded.csv", status="processing", uploaded_by=uploaded_by
+        )
         db.add(job)
         db.flush()
 
@@ -656,14 +694,18 @@ def ingest_flexible_csv(
                 shift_code = row_data.get("shift") or "A"
                 part_name = row_data.get("part") or None
 
-                machine = db.scalar(select(Machine).where(Machine.plant_id == plant_id, Machine.name == machine_name))
+                machine = db.scalar(
+                    select(Machine).where(
+                        Machine.plant_id == plant_id, Machine.name == machine_name
+                    )
+                )
                 if not machine:
                     default_type = db.scalar(
-                    select(MachineType).where(MachineType.code == "GENERIC")
-                )
+                        select(MachineType).where(MachineType.code == "GENERIC")
+                    )
                     default_status = db.scalar(
-                    select(MachineStatus).where(MachineStatus.code == "ACTIVE")
-                )
+                        select(MachineStatus).where(MachineStatus.code == "ACTIVE")
+                    )
                     machine = Machine(
                         plant_id=plant_id,
                         code=machine_name,
@@ -674,7 +716,9 @@ def ingest_flexible_csv(
                     db.add(machine)
                     db.flush()
 
-                shift = db.scalar(select(Shift).where(Shift.plant_id == plant_id, Shift.code == shift_code))
+                shift = db.scalar(
+                    select(Shift).where(Shift.plant_id == plant_id, Shift.code == shift_code)
+                )
                 if not shift:
                     shift = Shift(
                         plant_id=plant_id,
@@ -713,17 +757,19 @@ def ingest_flexible_csv(
                 target_qty = row_data.get("target") or None
 
                 existing_rec = db.scalar(
-                    select(ProductionRecord).where(ProductionRecord.external_row_key == external_row_key)
+                    select(ProductionRecord).where(
+                        ProductionRecord.external_row_key == external_row_key
+                    )
                 )
                 if existing_rec is not None:
                     prod_rec = existing_rec
                     custom = dict(prod_rec.custom_fields or {})
-                    custom["downtime"] = (
-                    float(custom.get("downtime") or 0) + float(downtime_minutes or 0)
-                )
-                    custom["rejection"] = (
-                    float(custom.get("rejection") or 0) + float(rejection_qty or 0)
-                )
+                    custom["downtime"] = float(custom.get("downtime") or 0) + float(
+                        downtime_minutes or 0
+                    )
+                    custom["rejection"] = float(custom.get("rejection") or 0) + float(
+                        rejection_qty or 0
+                    )
                     custom["raw_rows"] = int(custom.get("raw_rows") or 0) + 1
                     if target_qty is not None:
                         custom["target"] = float(target_qty)

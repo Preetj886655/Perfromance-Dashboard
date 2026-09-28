@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-
 from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
 
 from app.api.schemas.auth import (
     AuthenticatedUserResponse,
@@ -88,10 +87,14 @@ def get_current_authenticated_user(
     response_model=GenericResponse,
     summary="Request a password reset without revealing whether the account exists",
 )
-def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)) -> GenericResponse:
+def forgot_password(
+    payload: ForgotPasswordRequest, db: Session = Depends(get_db)
+) -> GenericResponse:
     identifier = (payload.email_or_employee_code or "").strip()
     if not identifier:
-        return GenericResponse(detail="If the account exists, password reset instructions have been provided.")
+        return GenericResponse(
+            detail="If the account exists, password reset instructions have been provided."
+        )
 
     lower_identifier = identifier.lower()
     user = db.scalar(
@@ -106,7 +109,9 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     if user is not None and user.is_active and user.password_hash:
         create_password_reset_token(user)
 
-    return GenericResponse(detail="If the account exists, password reset instructions have been provided.")
+    return GenericResponse(
+        detail="If the account exists, password reset instructions have been provided."
+    )
 
 
 @router.post(

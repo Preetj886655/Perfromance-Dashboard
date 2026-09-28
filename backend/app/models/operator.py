@@ -20,9 +20,7 @@ class Operator(Base):
     """Named operator master (Excel col H free text → FK master)."""
 
     __tablename__ = "operators"
-    __table_args__ = (
-        UniqueConstraint("employee_code", name="uq_operators_employee_code"),
-    )
+    __table_args__ = (UniqueConstraint("employee_code", name="uq_operators_employee_code"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

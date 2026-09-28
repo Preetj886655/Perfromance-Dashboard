@@ -114,9 +114,7 @@ def _upload(
 # --- 1: successful DPR_OEE upload ---
 
 
-def test_api_1_successful_dpr_oee_upload(
-    client: TestClient, db_session: Session
-) -> None:
+def test_api_1_successful_dpr_oee_upload(client: TestClient, db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     _seed_second_machine(db_session, masters)
@@ -155,9 +153,7 @@ def test_api_1_successful_dpr_oee_upload(
 # --- 2: invalid file ---
 
 
-def test_api_2_invalid_file_extension(
-    client: TestClient, db_session: Session
-) -> None:
+def test_api_2_invalid_file_extension(client: TestClient, db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     response = _upload(
@@ -199,9 +195,7 @@ def test_api_3_missing_plant_id(client: TestClient, db_session: Session) -> None
 # --- 4: invalid workbook/sheet ---
 
 
-def test_api_4_invalid_workbook_sheet(
-    client: TestClient, db_session: Session
-) -> None:
+def test_api_4_invalid_workbook_sheet(client: TestClient, db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     wb = Workbook()
@@ -244,9 +238,7 @@ def test_api_5_import_job_status(client: TestClient, db_session: Session) -> Non
 # --- 6: import rows retrieval ---
 
 
-def test_api_6_import_rows_paginated(
-    client: TestClient, db_session: Session
-) -> None:
+def test_api_6_import_rows_paginated(client: TestClient, db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     _seed_second_machine(db_session, masters)
@@ -410,14 +402,8 @@ def test_api_11_not_found(client: TestClient, db_session: Session) -> None:
     assert client.get(f"/api/v1/imports/{missing}").status_code == 404
     assert client.get(f"/api/v1/imports/{missing}/rows").status_code == 404
     assert client.get(f"/api/v1/production-records/{missing}").status_code == 404
-    assert (
-        client.get(f"/api/v1/production-records/{missing}/metrics").status_code
-        == 404
-    )
-    assert (
-        client.get(f"/api/v1/production-records/{missing}/events").status_code
-        == 404
-    )
+    assert client.get(f"/api/v1/production-records/{missing}/metrics").status_code == 404
+    assert client.get(f"/api/v1/production-records/{missing}/events").status_code == 404
 
     # plant_id not found on upload
     content = _xlsx_bytes(rows=[_row5_cells()])

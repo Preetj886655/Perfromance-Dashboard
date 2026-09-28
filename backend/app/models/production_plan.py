@@ -97,7 +97,5 @@ class ProductionPlan(Base):
     )
 
     part: Mapped[Part] = relationship("Part", back_populates="production_plans")
-    machine: Mapped[Machine | None] = relationship(
-        "Machine", back_populates="production_plans"
-    )
+    machine: Mapped[Machine | None] = relationship("Machine", back_populates="production_plans")
     line: Mapped[Line | None] = relationship("Line", back_populates="production_plans")

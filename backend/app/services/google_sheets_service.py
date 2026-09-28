@@ -12,7 +12,7 @@ import json
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
@@ -54,8 +54,11 @@ _ALIAS_MAP = {
     "rejection": "rejection",
     "rejectedqty": "rejection",
     "totalrejection": "rejection",
+    "prodtargetnos": "productionTarget",
+    "productiontargetnos": "productionTarget",
     "target": "productionTarget",
     "productiontarget": "productionTarget",
+    "totalprodnos": "totalProduction",
     "totalsproduction": "totalProduction",
     "production": "totalProduction",
     "actualproductionqty": "totalProduction",
@@ -89,7 +92,7 @@ def _coerce_value(value: Any) -> Any:
         if stripped.lower() in {"null", "n/a", "na", "none"}:
             return None
         return stripped
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int | float) and not isinstance(value, bool):
         return value
     return value
 
@@ -97,7 +100,7 @@ def _coerce_value(value: Any) -> Any:
 def _coerce_number(value: Any) -> float | None:
     if value is None or value == "":
         return None
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int | float) and not isinstance(value, bool):
         return float(value)
     if isinstance(value, str):
         cleaned = value.strip().replace(",", "").replace("%", "")
@@ -116,13 +119,27 @@ def _coerce_date(value: Any) -> str | None:
     if isinstance(value, datetime):
         dt = value
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.date().isoformat()
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        # Excel serial date: 1 = 1899-12-31 (with Excel leap year bug, 25569 = 1970-01-01)
+        try:
+            from datetime import timedelta
+            excel_epoch = datetime(1899, 12, 30, tzinfo=UTC)
+            dt = excel_epoch + timedelta(days=float(value))
+            return dt.date().isoformat()
+        except Exception:
+            return None
     if isinstance(value, str):
         stripped = value.strip()
         if not stripped:
             return None
-        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
+        # Fast path for already-normalized ISO date: YYYY-MM-DD
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", stripped):
+            return stripped
+        # Indian business format first: DD/MM/YYYY (e.g. 12/09/2026 is
+        # 12 September, NOT 9 December). %d/%m/%Y must be tried before %m/%d/%Y.
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d"):
             try:
                 return datetime.strptime(stripped, fmt).date().isoformat()
             except ValueError:
@@ -130,11 +147,18 @@ def _coerce_date(value: Any) -> str | None:
         try:
             parsed = datetime.fromisoformat(stripped)
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
+                parsed = parsed.replace(tzinfo=UTC)
             return parsed.date().isoformat()
         except ValueError:
             return stripped
     return None
+
+
+def _coerce_int_or_float(value: Any) -> int | float | None:
+    num = _coerce_number(value)
+    if num is None:
+        return None
+    return int(num) if num.is_integer() else num
 
 
 def _normalize_key(raw_key: str) -> str:
@@ -157,11 +181,41 @@ def _build_clean_record(row_values: list[Any], headers: list[str]) -> dict[str, 
         cleaned_value = _coerce_value(value)
         normalized_key = _normalize_key(key)
 
-        if normalized_key in {"slNo", "date", "line", "shift", "part", "stage", "machine", "downtimeType", "downtimeMinutes", "productionLoss", "productionTarget", "totalProduction", "rejection", "description", "quality", "availability", "performance", "oee", "goodQuantity"}:
+        if normalized_key in {
+            "slNo",
+            "date",
+            "line",
+            "shift",
+            "part",
+            "stage",
+            "machine",
+            "downtimeType",
+            "downtimeMinutes",
+            "productionLoss",
+            "productionTarget",
+            "totalProduction",
+            "rejection",
+            "description",
+            "quality",
+            "availability",
+            "performance",
+            "oee",
+            "goodQuantity",
+        }:
             if normalized_key == "date":
                 parsed = _coerce_date(cleaned_value)
                 record[normalized_key] = parsed
-            elif normalized_key in {"downtimeMinutes", "productionLoss", "productionTarget", "totalProduction", "rejection", "goodQuantity", "quality", "availability", "performance", "oee"}:
+            elif normalized_key in {
+                "slNo",
+                "downtimeMinutes",
+                "productionLoss",
+                "productionTarget",
+                "totalProduction",
+                "rejection",
+                "goodQuantity",
+            }:
+                record[normalized_key] = _coerce_int_or_float(cleaned_value)
+            elif normalized_key in {"quality", "availability", "performance", "oee"}:
                 record[normalized_key] = _coerce_number(cleaned_value)
             else:
                 record[normalized_key] = cleaned_value
@@ -171,7 +225,9 @@ def _build_clean_record(row_values: list[Any], headers: list[str]) -> dict[str, 
             key_name = key if key else f"column_{index + 1}"
             custom_key = re.sub(r"[^0-9a-zA-Z]+", " ", key_name).strip()
             custom_key = re.sub(r"\s+", " ", custom_key)
-            custom_key = custom_key[0].lower() + custom_key[1:] if custom_key else f"column_{index + 1}"
+            custom_key = (
+                custom_key[0].lower() + custom_key[1:] if custom_key else f"column_{index + 1}"
+            )
             legacy[custom_key.replace(" ", "")] = cleaned_value
 
     for key in field_orders:
@@ -242,55 +298,66 @@ def _get_credentials_info() -> dict[str, Any] | None:
     OS environment variables take precedence for runtime overrides.
 
     Priority order:
-      1. GOOGLE_SERVICE_ACCOUNT_JSON env var
-      2. settings.google_service_account_json (from .env file)
-      3. GOOGLE_SERVICE_ACCOUNT_CREDENTIALS env var
-      4. settings.google_service_account_credentials (from .env file)
-      5. GOOGLE_SHEETS_CREDENTIALS_JSON env var
-      6. settings.google_sheets_credentials_json (from .env file)
-      7. GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON env var
-      8. settings.google_sheets_service_account_json (from .env file)
+      1. GOOGLE_SERVICE_ACCOUNT_JSON env var / setting (inline JSON string or file path)
+      2. GOOGLE_SERVICE_ACCOUNT_FILE env var / setting (file path)
+      3. GOOGLE_SERVICE_ACCOUNT_CREDENTIALS env var / setting
+      4. GOOGLE_SHEETS_CREDENTIALS_JSON env var / setting
+      5. GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON env var / setting
 
     Returns parsed JSON dict or None if no credentials found.
     """
     # Check sources in priority order: OS env var first, then settings (.env)
     sources = [
         ("GOOGLE_SERVICE_ACCOUNT_JSON", settings.google_service_account_json),
+        ("GOOGLE_SERVICE_ACCOUNT_FILE", settings.google_service_account_file),
         ("GOOGLE_SERVICE_ACCOUNT_CREDENTIALS", settings.google_service_account_credentials),
         ("GOOGLE_SHEETS_CREDENTIALS_JSON", settings.google_sheets_credentials_json),
         ("GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON", settings.google_sheets_service_account_json),
     ]
 
     raw = ""
-    source_name = ""
     for env_var, settings_val in sources:
         # Check OS environment first (allows runtime override)
         env_val = (os.getenv(env_var) or "").strip()
         if env_val:
             raw = env_val
-            source_name = f"env:{env_var}"
             break
         # Fall back to settings (.env file)
         if settings_val and settings_val.strip():
             raw = settings_val.strip()
-            source_name = f"settings:{env_var}"
             break
 
     if not raw:
         return None
 
-    # Resolve file path or inline JSON
+    # 1. Resolve as existing file path
     if os.path.exists(raw):
         try:
-            with open(raw, "r", encoding="utf-8") as handle:
+            with open(raw, encoding="utf-8") as handle:
                 return json.load(handle)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Google service account JSON file is invalid: {exc}") from exc
 
+    # 2. Resolve as inline JSON string
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return None
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 3. Resolve as Base64-encoded JSON string (useful for multi-line env var in Render)
+    try:
+        import base64
+
+        decoded = base64.b64decode(raw.strip()).decode("utf-8")
+        parsed = json.loads(decoded)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    return None
 
 
 _WORKSHEET_NAME_ENV_VARS = (
@@ -343,7 +410,9 @@ def _resolve_worksheet_title(spreadsheet: dict[str, Any], requested_name: str | 
     return "Sheet1"
 
 
-def _fetch_sheet_values(spreadsheet_id: str, worksheet_name: str | None = None) -> tuple[str, list[list[Any]], list[str]]:
+def _fetch_sheet_values(
+    spreadsheet_id: str, worksheet_name: str | None = None
+) -> tuple[str, list[list[Any]], list[str]]:
     service_account_info = _get_credentials_info()
     if not service_account_info:
         raise RuntimeError("Google Sheets credentials were not configured.")
@@ -357,17 +426,26 @@ def _fetch_sheet_values(spreadsheet_id: str, worksheet_name: str | None = None) 
     spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     resolved_worksheet_name = _resolve_worksheet_title(spreadsheet, worksheet_name)
     worksheet_range = f"{resolved_worksheet_name}!A:ZZ"
-    response = service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=worksheet_range,
-        majorDimension="ROWS",
-    ).execute()
+    response = (
+        service.spreadsheets()
+        .values()
+        .get(
+            spreadsheetId=spreadsheet_id,
+            range=worksheet_range,
+            majorDimension="ROWS",
+            valueRenderOption="UNFORMATTED_VALUE",
+            dateTimeRenderOption="FORMATTED_STRING",
+        )
+        .execute()
+    )
     rows = response.get("values", [])
     headers = rows[0] if rows else []
     return resolved_worksheet_name, rows, [str(header).strip() for header in headers]
 
 
-def get_google_sheet_status(spreadsheet_id: str | None = None, worksheet_name: str | None = None) -> dict[str, Any]:
+def get_google_sheet_status(
+    spreadsheet_id: str | None = None, worksheet_name: str | None = None
+) -> dict[str, Any]:
     resolved_id = (spreadsheet_id or _get_default_spreadsheet_id()).strip()
     resolved_worksheet = worksheet_name or _get_default_worksheet()
 
@@ -383,7 +461,7 @@ def get_google_sheet_status(spreadsheet_id: str | None = None, worksheet_name: s
     try:
         worksheet, rows, _ = _fetch_sheet_values(resolved_id, resolved_worksheet)
         record_count = len(normalize_google_sheet_rows(rows))
-        last_successful_sync = datetime.now(timezone.utc).isoformat()
+        last_successful_sync = datetime.now(UTC).isoformat()
         return build_google_sheet_status(
             spreadsheet_id=resolved_id,
             worksheet_name=worksheet,
@@ -401,20 +479,47 @@ def get_google_sheet_status(spreadsheet_id: str | None = None, worksheet_name: s
         )
 
 
+def _dataset_date_bounds(records: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    """Return (minDate, maxDate) ISO dates across all normalized records.
+
+    Dates are already normalized to ISO yyyy-mm-dd by ``_coerce_date``; invalid
+    values are skipped so they never distort the bounds.
+    """
+    valid = sorted(
+        record["date"]
+        for record in records
+        if isinstance(record.get("date"), str) and re.match(r"^\d{4}-\d{2}-\d{2}$", record["date"])
+    )
+    if not valid:
+        return None, None
+    return valid[0], valid[-1]
+
+
 def fetch_google_sheet_dataset(
     spreadsheet_id: str | None = None,
     worksheet_name: str | None = None,
+    refresh: bool = False,
 ) -> dict[str, Any]:
+    """Fetch the live Google Sheet dataset.
+
+    ``refresh=True`` bypasses the in-memory TTL cache and performs a fresh
+    Google Sheets API fetch so newly appended rows are returned immediately.
+    """
     resolved_id = (spreadsheet_id or _get_default_spreadsheet_id()).strip()
     resolved_worksheet = worksheet_name or _get_default_worksheet()
 
     cache_key = f"{resolved_id}:{resolved_worksheet}"
     now = time.monotonic()
 
-    with _CACHE_LOCK:
-        cached = _CACHE.get(cache_key)
-        if cached and (now - cached["fetched_at"]) < _GOOGLE_SHEETS_CACHE_TTL_SECONDS:
-            return cached["payload"]
+    if not refresh:
+        with _CACHE_LOCK:
+            cached = _CACHE.get(cache_key)
+            if cached and (now - cached["fetched_at"]) < _GOOGLE_SHEETS_CACHE_TTL_SECONDS:
+                payload = cached["payload"]
+                # Annotate a copy so the cached payload itself stays cacheHit-free.
+                annotated = dict(payload)
+                annotated["cacheHit"] = True
+                return annotated
 
     if not resolved_id:
         payload = {
@@ -422,6 +527,9 @@ def fetch_google_sheet_dataset(
             "spreadsheetId": "",
             "worksheet": resolved_worksheet,
             "recordCount": 0,
+            "minDate": None,
+            "maxDate": None,
+            "cacheHit": False,
             "lastUpdated": None,
             "columnMismatches": [],
             "error": "Google Sheets spreadsheet ID is not configured.",
@@ -436,10 +544,14 @@ def fetch_google_sheet_dataset(
     try:
         worksheet, rows, headers = _fetch_sheet_values(resolved_id, resolved_worksheet)
         normalized = normalize_google_sheet_rows(rows)
+        min_date, max_date = _dataset_date_bounds(normalized)
         mismatches = []
         if headers:
             for required in sorted(_REQUIRED_FIELDS):
-                if not any(_normalize_header(header) in {required, *_ALIAS_MAP.get(required, [required])} for header in headers):
+                if not any(
+                    _normalize_header(header) in {required, *_ALIAS_MAP.get(required, [required])}
+                    for header in headers
+                ):
                     mismatches.append(f"Missing expected column: {required}")
 
         payload = {
@@ -447,7 +559,10 @@ def fetch_google_sheet_dataset(
             "spreadsheetId": resolved_id,
             "worksheet": worksheet,
             "recordCount": len(normalized),
-            "lastUpdated": datetime.now(timezone.utc).isoformat(),
+            "minDate": min_date,
+            "maxDate": max_date,
+            "cacheHit": False,
+            "lastUpdated": datetime.now(UTC).isoformat(),
             "columnMismatches": mismatches,
             "error": None,
             "status": "connected",
@@ -459,14 +574,18 @@ def fetch_google_sheet_dataset(
         return payload
     except Exception as exc:
         stale = None
-        with _CACHE_LOCK:
-            stale = _CACHE.get(cache_key)
+        if not refresh:
+            with _CACHE_LOCK:
+                stale = _CACHE.get(cache_key)
 
         payload = {
             "source": "google-sheets",
             "spreadsheetId": resolved_id,
             "worksheet": resolved_worksheet,
             "recordCount": (stale["payload"].get("recordCount", 0) if stale else 0),
+            "minDate": (stale["payload"].get("minDate") if stale else None),
+            "maxDate": (stale["payload"].get("maxDate") if stale else None),
+            "cacheHit": False,
             "lastUpdated": (stale["payload"].get("lastUpdated") if stale else None),
             "columnMismatches": [],
             "error": str(exc),

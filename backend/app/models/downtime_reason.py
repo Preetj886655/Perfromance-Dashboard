@@ -37,9 +37,7 @@ class DowntimeReason(Base):
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     # Q2 TBC — planned vs unplanned remains configurable; do not use PG ENUM.
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     excel_column: Mapped[str | None] = mapped_column(String(8), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

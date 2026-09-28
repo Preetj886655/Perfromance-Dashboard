@@ -111,12 +111,8 @@ class MaintenanceTicket(Base):
         onupdate=func.now(),
     )
 
-    machine: Mapped[Machine] = relationship(
-        "Machine", back_populates="maintenance_tickets"
-    )
-    production_record: Mapped[ProductionRecord | None] = relationship(
-        "ProductionRecord"
-    )
+    machine: Mapped[Machine] = relationship("Machine", back_populates="maintenance_tickets")
+    production_record: Mapped[ProductionRecord | None] = relationship("ProductionRecord")
     downtime_event: Mapped[DowntimeEvent | None] = relationship("DowntimeEvent")
     assignee: Mapped[User | None] = relationship(
         "User",

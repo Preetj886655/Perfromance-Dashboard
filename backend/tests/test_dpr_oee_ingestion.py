@@ -85,9 +85,7 @@ def _seed_downtime_reasons(session: Session) -> dict[str, DowntimeReason]:
     """Transactional fixture seed only — not a permanent production seed."""
     by_col: dict[str, DowntimeReason] = {}
     for code, label, sort_order, excel_column in DOWNTIME_SEED:
-        existing = session.scalar(
-            select(DowntimeReason).where(DowntimeReason.code == code)
-        )
+        existing = session.scalar(select(DowntimeReason).where(DowntimeReason.code == code))
         if existing is None:
             row = DowntimeReason(
                 code=code,
@@ -110,9 +108,7 @@ def _seed_downtime_reasons(session: Session) -> dict[str, DowntimeReason]:
 
 def _ensure_rejection_reasons(session: Session) -> None:
     """Assert A–J exist (already seeded in DB); skip inventing if present."""
-    codes = set(
-        session.scalars(select(RejectionReason.code)).all()
-    )
+    codes = set(session.scalars(select(RejectionReason.code)).all())
     missing = {c for _, c in REJECTION_COLUMNS} - codes
     assert not missing, (
         f"rejection_reasons A–J must be seeded before ingestion tests; missing={missing}"
@@ -242,6 +238,7 @@ def _write_minimal_workbook(path_or_buf, *, rows: list[dict]) -> None:
 # --- 1–3: sheet discovery, headers, empty skip ---
 
 
+@pytest.mark.skipif(not REAL_XLSX.exists(), reason="PRIL_DPR_OEE sample file not in repository")
 def test_sheet_discovery_and_header_mapping(db_session: Session) -> None:
     assert REAL_XLSX.exists()
     wb = load_workbook(REAL_XLSX, data_only=False)
@@ -262,6 +259,7 @@ def test_wrong_sheet_fails_job(db_session: Session, tmp_path: Path) -> None:
     assert "DPR_OEE" in (result.error_summary or "")
 
 
+@pytest.mark.skipif(not REAL_XLSX.exists(), reason="PRIL_DPR_OEE sample file not in repository")
 def test_empty_template_rows_skipped(db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
@@ -336,6 +334,7 @@ def _row6_cells(*, machine: str = "M001") -> dict:
 # --- 4–16: happy path row 5/6 ---
 
 
+@pytest.mark.skipif(not REAL_XLSX.exists(), reason="PRIL_DPR_OEE sample file not in repository")
 def test_ingest_real_xlsx_duplicate_business_key_last_wins(
     db_session: Session,
 ) -> None:
@@ -372,9 +371,7 @@ def test_ingest_real_xlsx_duplicate_business_key_last_wins(
 
     job_rows = list(
         db_session.scalars(
-            select(ImportJobRow).where(
-                ImportJobRow.import_job_id == result.import_job_id
-            )
+            select(ImportJobRow).where(ImportJobRow.import_job_id == result.import_job_id)
         ).all()
     )
     assert len(job_rows) == 2
@@ -400,9 +397,7 @@ def test_ingest_row5_and_row6_distinct_keys(db_session: Session, tmp_path: Path)
 
     records = list(
         db_session.scalars(
-            select(ProductionRecord).where(
-                ProductionRecord.id.in_(result.production_record_ids)
-            )
+            select(ProductionRecord).where(ProductionRecord.id.in_(result.production_record_ids))
         ).all()
     )
     assert len(records) == 2
@@ -472,9 +467,7 @@ def test_ingest_row5_and_row6_distinct_keys(db_session: Session, tmp_path: Path)
 
     job_rows = list(
         db_session.scalars(
-            select(ImportJobRow).where(
-                ImportJobRow.import_job_id == result.import_job_id
-            )
+            select(ImportJobRow).where(ImportJobRow.import_job_id == result.import_job_id)
         ).all()
     )
     assert len(job_rows) == 2
@@ -482,6 +475,7 @@ def test_ingest_row5_and_row6_distinct_keys(db_session: Session, tmp_path: Path)
     assert all(jr.validation_errors == [] for jr in job_rows)
 
 
+@pytest.mark.skipif(not REAL_XLSX.exists(), reason="PRIL_DPR_OEE sample file not in repository")
 def test_rejection_aj_and_downtime_qaa_mapping(db_session: Session) -> None:
     """Item 9–10: reason catalogs resolve by excel_column."""
     masters = _seed_masters_for_real_xlsx(db_session)
@@ -499,9 +493,7 @@ def test_rejection_aj_and_downtime_qaa_mapping(db_session: Session) -> None:
 # --- 17: idempotent re-import ---
 
 
-def test_idempotent_reimport_updates_not_duplicates(
-    db_session: Session, tmp_path: Path
-) -> None:
+def test_idempotent_reimport_updates_not_duplicates(db_session: Session, tmp_path: Path) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     _seed_second_machine(db_session, masters)
@@ -516,9 +508,9 @@ def test_idempotent_reimport_updates_not_duplicates(
     ids_first = set(first.production_record_ids)
     assert len(ids_first) == 2
     count_after_first = db_session.scalar(
-        select(func.count()).select_from(ProductionRecord).where(
-            ProductionRecord.plant_id == plant.id
-        )
+        select(func.count())
+        .select_from(ProductionRecord)
+        .where(ProductionRecord.plant_id == plant.id)
     )
 
     second = ingest_dpr_oee_workbook(db_session, path, plant_id=plant.id)
@@ -527,17 +519,17 @@ def test_idempotent_reimport_updates_not_duplicates(
     assert ids_first == ids_second
 
     count_after_second = db_session.scalar(
-        select(func.count()).select_from(ProductionRecord).where(
-            ProductionRecord.plant_id == plant.id
-        )
+        select(func.count())
+        .select_from(ProductionRecord)
+        .where(ProductionRecord.plant_id == plant.id)
     )
     assert count_after_first == count_after_second == 2
 
     for pid in ids_second:
         dt_n = db_session.scalar(
-            select(func.count()).select_from(DowntimeEvent).where(
-                DowntimeEvent.production_record_id == pid
-            )
+            select(func.count())
+            .select_from(DowntimeEvent)
+            .where(DowntimeEvent.production_record_id == pid)
         )
         assert dt_n == 1
 
@@ -545,9 +537,7 @@ def test_idempotent_reimport_updates_not_duplicates(
 # --- 18: invalid row ---
 
 
-def test_invalid_unknown_machine_validation_error(
-    db_session: Session, tmp_path: Path
-) -> None:
+def test_invalid_unknown_machine_validation_error(db_session: Session, tmp_path: Path) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     path = tmp_path / "bad_machine.xlsx"
@@ -582,17 +572,15 @@ def test_invalid_unknown_machine_validation_error(
     assert any("Unknown machine" in e["message"] for e in jr.validation_errors)
     assert (
         db_session.scalar(
-            select(func.count()).select_from(ProductionRecord).where(
-                ProductionRecord.plant_id == plant.id
-            )
+            select(func.count())
+            .select_from(ProductionRecord)
+            .where(ProductionRecord.plant_id == plant.id)
         )
         == 0
     )
 
 
-def test_missing_downtime_reason_is_validation_error(
-    db_session: Session, tmp_path: Path
-) -> None:
+def test_missing_downtime_reason_is_validation_error(db_session: Session, tmp_path: Path) -> None:
     """Do not invent downtime reasons when catalog empty."""
     _ensure_rejection_reasons(db_session)
     # Intentionally do NOT seed downtime reasons
@@ -669,9 +657,7 @@ def test_missing_downtime_reason_is_validation_error(
 # --- 19: Q1 ---
 
 
-def test_q1_stop_before_start_no_plus_24h(
-    db_session: Session, tmp_path: Path
-) -> None:
+def test_q1_stop_before_start_no_plus_24h(db_session: Session, tmp_path: Path) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     path = tmp_path / "q1.xlsx"
@@ -719,9 +705,7 @@ def test_q1_stop_before_start_no_plus_24h(
 # --- 20: NULL metrics ---
 
 
-def test_undefined_metrics_remain_null(
-    db_session: Session, tmp_path: Path
-) -> None:
+def test_undefined_metrics_remain_null(db_session: Session, tmp_path: Path) -> None:
     """Zero produced → rejection_ppm / quality None → SQL NULL (015)."""
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
@@ -747,9 +731,7 @@ def test_undefined_metrics_remain_null(
     )
     result = ingest_dpr_oee_workbook(db_session, path, plant_id=plant.id)
     assert result.success_count == 1
-    metrics = db_session.get(
-        ProductionRecordMetrics, result.production_record_ids[0]
-    )
+    metrics = db_session.get(ProductionRecordMetrics, result.production_record_ids[0])
     assert metrics is not None
     assert metrics.rejection_ppm is None
     assert metrics.quality is None
@@ -757,14 +739,14 @@ def test_undefined_metrics_remain_null(
     assert metrics.total_rejection_qty == Decimal("0")
 
 
+@pytest.mark.skipif(not REAL_XLSX.exists(), reason="PRIL_DPR_OEE sample file not in repository")
 def test_plant_id_required_parameter(db_session: Session) -> None:
     """Q11: plant comes from caller — unknown UUID raises."""
     with pytest.raises(ValueError, match="plant_id"):
-        ingest_dpr_oee_workbook(
-            db_session, REAL_XLSX, plant_id=uuid.uuid4()
-        )
+        ingest_dpr_oee_workbook(db_session, REAL_XLSX, plant_id=uuid.uuid4())
 
 
+@pytest.mark.skipif(not REAL_XLSX.exists(), reason="PRIL_DPR_OEE sample file not in repository")
 def test_bytes_ingestion(db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]

@@ -2,8 +2,9 @@ import type { OeeSnapshot, ScopeType } from "../../types/dashboard";
 import {
   formatDateTime,
   formatMachineUtilisation,
-  formatNumber,
   formatRatioAsPercent,
+  formatCompactQuantity,
+  formatExactQuantity,
 } from "../../utils/format";
 import { StatusBanner } from "./StatusBanner";
 
@@ -75,8 +76,14 @@ export function SnapshotTable({
                     <td>{formatRatioAsPercent(row.performance)}</td>
                     <td>{formatRatioAsPercent(row.quality)}</td>
                     <td>{formatMachineUtilisation(row.machine_utilisation)}</td>
-                    <td>{formatNumber(row.sum_produced_qty)}</td>
-                    <td>{formatNumber(row.sum_good_qty)}</td>
+                    <td title={`Produced: ${formatExactQuantity(row.sum_produced_qty)}`}>
+                      <div style={{ fontWeight: 600 }}>{formatCompactQuantity(row.sum_produced_qty)}</div>
+                      <div style={{ fontSize: "0.6875rem", opacity: 0.75 }}>({formatExactQuantity(row.sum_produced_qty)})</div>
+                    </td>
+                    <td title={`Good: ${formatExactQuantity(row.sum_good_qty)}`}>
+                      <div style={{ fontWeight: 600 }}>{formatCompactQuantity(row.sum_good_qty)}</div>
+                      <div style={{ fontSize: "0.6875rem", opacity: 0.75 }}>({formatExactQuantity(row.sum_good_qty)})</div>
+                    </td>
                     <td>{formatDateTime(row.computed_at)}</td>
                     {onDrill ? (
                       <td>

@@ -41,9 +41,7 @@ class Machine(Base):
     """Plant asset identity for DPR / OEE (Excel col D)."""
 
     __tablename__ = "machines"
-    __table_args__ = (
-        UniqueConstraint("plant_id", "code", name="uq_machines_plant_id_code"),
-    )
+    __table_args__ = (UniqueConstraint("plant_id", "code", name="uq_machines_plant_id_code"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -95,21 +93,15 @@ class Machine(Base):
 
     plant: Mapped[Plant] = relationship("Plant", back_populates="machines")
     line: Mapped[Line | None] = relationship("Line", back_populates="machines")
-    machine_type: Mapped[MachineType] = relationship(
-        "MachineType", back_populates="machines"
-    )
-    status: Mapped[MachineStatus] = relationship(
-        "MachineStatus", back_populates="machines"
-    )
+    machine_type: Mapped[MachineType] = relationship("MachineType", back_populates="machines")
+    status: Mapped[MachineStatus] = relationship("MachineStatus", back_populates="machines")
     machine_part_standards: Mapped[list[MachinePartStandard]] = relationship(
         "MachinePartStandard", back_populates="machine"
     )
     maintenance_tickets: Mapped[list[MaintenanceTicket]] = relationship(
         "MaintenanceTicket", back_populates="machine"
     )
-    pm_schedules: Mapped[list[PmSchedule]] = relationship(
-        "PmSchedule", back_populates="machine"
-    )
+    pm_schedules: Mapped[list[PmSchedule]] = relationship("PmSchedule", back_populates="machine")
     pm_completions: Mapped[list[PmCompletion]] = relationship(
         "PmCompletion", back_populates="machine"
     )

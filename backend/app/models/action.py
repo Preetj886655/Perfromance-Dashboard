@@ -36,9 +36,7 @@ if TYPE_CHECKING:
 
 # Stage A Step 15 recommended statuses (display codes; not PG ENUM).
 _ACTION_STATUS_CHECK = (
-    "status IN ("
-    "'Open', 'In Progress', 'On Hold', 'Completed', 'Verified', 'Closed'"
-    ")"
+    "status IN ('Open', 'In Progress', 'On Hold', 'Completed', 'Verified', 'Closed')"
 )
 
 

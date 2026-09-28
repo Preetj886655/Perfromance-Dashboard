@@ -8,8 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db, get_engine
 from app.main import app
-from app.models.column_mapping_template import ColumnMappingTemplate
-from app.models.data_source import DataSource
 from app.models.department import Department
 from app.models.line import Line
 from app.models.machine import Machine
@@ -215,7 +213,9 @@ def test_master_data_parts_shifts_operators(client: TestClient, db_session: Sess
     assert "Operator One" in op_names
 
 
-def test_master_data_endpoint_404_for_unknown_plant_or_line(client: TestClient, db_session: Session) -> None:
+def test_master_data_endpoint_404_for_unknown_plant_or_line(
+    client: TestClient, db_session: Session
+) -> None:
     _seed_master_data(db_session)
     assert client.get("/api/v1/plants").status_code == 200
     assert client.get("/api/v1/lines", params={"plant_id": str(uuid.uuid4())}).status_code == 404
@@ -223,8 +223,10 @@ def test_master_data_endpoint_404_for_unknown_plant_or_line(client: TestClient, 
 
 
 def test_data_source_and_mapping_template_crud(client: TestClient, db_session: Session) -> None:
+    source_code = f"google-form-pril-{uuid.uuid4().hex[:6]}"
+    mapping_name = f"pril-production-form-{uuid.uuid4().hex[:6]}"
     payload = {
-        "code": "google-form-pril",
+        "code": source_code,
         "name": "PRIL Google Form",
         "source_type": "form",
         "config": {
@@ -239,15 +241,15 @@ def test_data_source_and_mapping_template_crud(client: TestClient, db_session: S
     create_source = client.post("/api/v1/data-sources", json=payload)
     assert create_source.status_code == 201, create_source.text
     body = create_source.json()
-    assert body["code"] == "google-form-pril"
+    assert body["code"] == source_code
     assert body["config"]["form_url"] == payload["config"]["form_url"]
 
     list_sources = client.get("/api/v1/data-sources")
     assert list_sources.status_code == 200, list_sources.text
-    assert any(item["code"] == "google-form-pril" for item in list_sources.json()["items"])
+    assert any(item["code"] == source_code for item in list_sources.json()["items"])
 
     mapping_payload = {
-        "name": "pril-production-form-v1",
+        "name": mapping_name,
         "source_type": "form",
         "department_id": None,
         "mapping": {
@@ -271,11 +273,13 @@ def test_data_source_and_mapping_template_crud(client: TestClient, db_session: S
 
     list_maps = client.get("/api/v1/column-mapping-templates")
     assert list_maps.status_code == 200, list_maps.text
-    assert any(item["name"] == "pril-production-form-v1" for item in list_maps.json()["items"])
+    assert any(item["name"] == mapping_name for item in list_maps.json()["items"])
 
 
 def test_import_preview_csv_headers(client: TestClient, db_session: Session) -> None:
-    csv_payload = "Plant,Line,Machine,Part,Date,Shift,Produced Qty\nPL1,LINE-A,M-001,PT1,2025-01-10,S1,120\n"
+    csv_payload = (
+        "Plant,Line,Machine,Part,Date,Shift,Produced Qty\nPL1,LINE-A,M-001,PT1,2025-01-10,S1,120\n"
+    )
     response = client.post(
         "/api/v1/imports/preview",
         files={"file": ("sample.csv", csv_payload, "text/csv")},
@@ -307,7 +311,16 @@ def test_import_mapping_validation_detects_missing_required_headers(
         "/api/v1/imports/validate-mapping",
         json={
             "source_type": "csv",
-            "headers": ["Plant", "Line", "Machine", "Part", "Date", "Shift", "Start Time", "Produced Qty"],
+            "headers": [
+                "Plant",
+                "Line",
+                "Machine",
+                "Part",
+                "Date",
+                "Shift",
+                "Start Time",
+                "Produced Qty",
+            ],
             "mapping": invalid_mapping,
         },
     )
@@ -322,7 +335,17 @@ def test_import_mapping_validation_detects_missing_required_headers(
         "/api/v1/imports/validate-mapping",
         json={
             "source_type": "csv",
-            "headers": ["Plant", "Line", "Machine", "Part", "Date", "Shift", "Start Time", "End Time", "Produced Qty"],
+            "headers": [
+                "Plant",
+                "Line",
+                "Machine",
+                "Part",
+                "Date",
+                "Shift",
+                "Start Time",
+                "End Time",
+                "Produced Qty",
+            ],
             "mapping": valid_mapping,
         },
     )

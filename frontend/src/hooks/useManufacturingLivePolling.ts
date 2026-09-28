@@ -80,7 +80,9 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
   );
 
   const pollStatus = useCallback(async () => {
-    if (!spreadsheetId || !enabled) return;
+    // NOTE: `enabled` gates only the background polling interval. Manual
+    // refresh must always work when a spreadsheet is configured.
+    if (!spreadsheetId) return;
 
     try {
       setStatus((prev) => ({ ...prev, state: 'polling' }));
@@ -128,15 +130,19 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
         onStatusChange(newStatus);
       }
     }
-  }, [spreadsheetId, worksheet, enabled, onStatusChange]);
+  }, [spreadsheetId, worksheet, onStatusChange]);
 
-  const fetchAndDetectChanges = useCallback(async () => {
-    if (!spreadsheetId || !enabled) return;
+  const fetchAndDetectChanges = useCallback(async (forceRefresh = false) => {
+    // NOTE: `enabled` gates only the background polling interval. Manual
+    // refresh must always work when a spreadsheet is configured.
+    if (!spreadsheetId) return;
 
     try {
       setStatus((prev) => ({ ...prev, state: 'syncing' }));
 
-      const dataResponse = await fetchManufacturingDataset(spreadsheetId, worksheet);
+      // forceRefresh=true sends refresh=true to the backend so its in-memory
+      // TTL cache is bypassed and fresh Google Sheets rows are returned.
+      const dataResponse = await fetchManufacturingDataset(spreadsheetId, worksheet, forceRefresh);
 
       const isConnected = dataResponse.connectionStatus === 'connected';
       const currentDataHash = hashDataset(dataResponse.data);
@@ -170,7 +176,10 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
         return newStatus;
       });
 
-      if (hasChanged && isConnected) {
+      // A forced (user-initiated) refresh ALWAYS delivers the payload so the
+      // live dashboard dataset is replaced; background polling only pushes
+      // when the dataset hash actually changed.
+      if (isConnected && (forceRefresh || hasChanged)) {
         if (onDataUpdate) {
           onDataUpdate(dataResponse);
         }
@@ -194,11 +203,13 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
         onStatusChange(newStatus);
       }
     }
-  }, [spreadsheetId, worksheet, enabled, onDataUpdate, onStatusChange]);
+  }, [spreadsheetId, worksheet, onDataUpdate, onStatusChange]);
 
   const refresh = useCallback(async () => {
+    // A user-initiated refresh is a REAL refresh: poll status, then force a
+    // cache-bypassing data fetch (refresh=true) and deliver the payload.
     await pollStatus();
-    await fetchAndDetectChanges();
+    await fetchAndDetectChanges(true);
   }, [pollStatus, fetchAndDetectChanges]);
 
   useEffect(() => {

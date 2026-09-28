@@ -26,9 +26,7 @@ class Line(Base):
     """Optional machine grouping within a plant."""
 
     __tablename__ = "lines"
-    __table_args__ = (
-        UniqueConstraint("plant_id", "code", name="uq_lines_plant_id_code"),
-    )
+    __table_args__ = (UniqueConstraint("plant_id", "code", name="uq_lines_plant_id_code"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

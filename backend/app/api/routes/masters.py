@@ -205,24 +205,24 @@ def list_operators(db: Session = Depends(get_db)) -> OperatorListResponse:
 )
 def create_plant(payload: PlantCreateRequest, db: Session = Depends(get_db)) -> PlantResponse:
     """Create a new plant.
-    
+
     Returns 400 if code is empty.
     Returns 409 if code already exists.
     """
     code = (payload.code or "").strip()
     name = (payload.name or "").strip()
     timezone = (payload.timezone or "").strip() or "UTC"
-    
+
     if not code:
         raise HTTPException(status_code=400, detail=_detail("Plant code is required"))
     if not name:
         raise HTTPException(status_code=400, detail=_detail("Plant name is required"))
-    
+
     # Check for duplicate code
     existing = db.scalar(select(Plant).where(func.lower(Plant.code) == code.lower()))
     if existing is not None:
         raise HTTPException(status_code=409, detail=_detail("Plant code already exists"))
-    
+
     plant = Plant(code=code, name=name, timezone=timezone, is_active=True)
     db.add(plant)
     db.flush()
@@ -238,7 +238,7 @@ def create_plant(payload: PlantCreateRequest, db: Session = Depends(get_db)) -> 
 )
 def create_line(payload: LineCreateRequest, db: Session = Depends(get_db)) -> LineResponse:
     """Create a new line under a plant.
-    
+
     Returns 404 if plant_id does not exist.
     Returns 400 if code or name is empty.
     Returns 409 if line code already exists for that plant.
@@ -246,17 +246,17 @@ def create_line(payload: LineCreateRequest, db: Session = Depends(get_db)) -> Li
     code = (payload.code or "").strip()
     name = (payload.name or "").strip()
     plant_id = payload.plant_id
-    
+
     if not code:
         raise HTTPException(status_code=400, detail=_detail("Line code is required"))
     if not name:
         raise HTTPException(status_code=400, detail=_detail("Line name is required"))
-    
+
     # Validate plant exists
     plant = db.get(Plant, plant_id)
     if plant is None:
         raise HTTPException(status_code=404, detail=_detail("Plant not found"))
-    
+
     # Check for duplicate code within this plant
     existing = db.scalar(
         select(Line).where(
@@ -265,8 +265,10 @@ def create_line(payload: LineCreateRequest, db: Session = Depends(get_db)) -> Li
         )
     )
     if existing is not None:
-        raise HTTPException(status_code=409, detail=_detail("Line code already exists for this plant"))
-    
+        raise HTTPException(
+            status_code=409, detail=_detail("Line code already exists for this plant")
+        )
+
     line = Line(plant_id=plant_id, code=code, name=name)
     db.add(line)
     db.flush()
@@ -295,25 +297,27 @@ def list_machine_types(db: Session = Depends(get_db)) -> MachineTypeListResponse
     dependencies=[Depends(require_permission("masters", "CREATE"))],
     summary="Create a new machine type",
 )
-def create_machine_type(payload: MachineTypeCreateRequest, db: Session = Depends(get_db)) -> MachineTypeResponse:
+def create_machine_type(
+    payload: MachineTypeCreateRequest, db: Session = Depends(get_db)
+) -> MachineTypeResponse:
     """Create a new machine type.
-    
+
     Returns 400 if code or name is empty.
     Returns 409 if code already exists.
     """
     code = (payload.code or "").strip()
     name = (payload.name or "").strip()
-    
+
     if not code:
         raise HTTPException(status_code=400, detail=_detail("Machine type code is required"))
     if not name:
         raise HTTPException(status_code=400, detail=_detail("Machine type name is required"))
-    
+
     # Check for duplicate code
     existing = db.scalar(select(MachineType).where(func.lower(MachineType.code) == code.lower()))
     if existing is not None:
         raise HTTPException(status_code=409, detail=_detail("Machine type code already exists"))
-    
+
     mtype = MachineType(code=code, name=name, is_active=True)
     db.add(mtype)
     db.flush()
@@ -342,25 +346,29 @@ def list_machine_statuses(db: Session = Depends(get_db)) -> MachineStatusListRes
     dependencies=[Depends(require_permission("masters", "CREATE"))],
     summary="Create a new machine status",
 )
-def create_machine_status(payload: MachineStatusCreateRequest, db: Session = Depends(get_db)) -> MachineStatusResponse:
+def create_machine_status(
+    payload: MachineStatusCreateRequest, db: Session = Depends(get_db)
+) -> MachineStatusResponse:
     """Create a new machine status.
-    
+
     Returns 400 if code or name is empty.
     Returns 409 if code already exists.
     """
     code = (payload.code or "").strip()
     name = (payload.name or "").strip()
-    
+
     if not code:
         raise HTTPException(status_code=400, detail=_detail("Machine status code is required"))
     if not name:
         raise HTTPException(status_code=400, detail=_detail("Machine status name is required"))
-    
+
     # Check for duplicate code
-    existing = db.scalar(select(MachineStatus).where(func.lower(MachineStatus.code) == code.lower()))
+    existing = db.scalar(
+        select(MachineStatus).where(func.lower(MachineStatus.code) == code.lower())
+    )
     if existing is not None:
         raise HTTPException(status_code=409, detail=_detail("Machine status code already exists"))
-    
+
     status_obj = MachineStatus(code=code, name=name, is_active=True)
     db.add(status_obj)
     db.flush()
@@ -376,7 +384,7 @@ def create_machine_status(payload: MachineStatusCreateRequest, db: Session = Dep
 )
 def create_machine(payload: MachineCreateRequest, db: Session = Depends(get_db)) -> MachineResponse:
     """Create a new machine under a plant (and optionally a line).
-    
+
     Returns 404 if plant_id, line_id, machine_type_id, or status_id does not exist.
     Returns 400 if code or name is empty, or if line does not belong to plant.
     Returns 409 if code already exists for that plant.
@@ -387,17 +395,17 @@ def create_machine(payload: MachineCreateRequest, db: Session = Depends(get_db))
     line_id = payload.line_id
     machine_type_id = payload.machine_type_id
     status_id = payload.status_id
-    
+
     if not code:
         raise HTTPException(status_code=400, detail=_detail("Machine code is required"))
     if not name:
         raise HTTPException(status_code=400, detail=_detail("Machine name is required"))
-    
+
     # Validate plant exists
     plant = db.get(Plant, plant_id)
     if plant is None:
         raise HTTPException(status_code=404, detail=_detail("Plant not found"))
-    
+
     # Validate line if provided
     if line_id is not None:
         line = db.get(Line, line_id)
@@ -405,18 +413,20 @@ def create_machine(payload: MachineCreateRequest, db: Session = Depends(get_db))
             raise HTTPException(status_code=404, detail=_detail("Line not found"))
         # Verify line belongs to this plant
         if line.plant_id != plant_id:
-            raise HTTPException(status_code=400, detail=_detail("Line does not belong to the selected plant"))
-    
+            raise HTTPException(
+                status_code=400, detail=_detail("Line does not belong to the selected plant")
+            )
+
     # Validate machine type exists
     mtype = db.get(MachineType, machine_type_id)
     if mtype is None:
         raise HTTPException(status_code=404, detail=_detail("Machine type not found"))
-    
+
     # Validate machine status exists
     mstatus = db.get(MachineStatus, status_id)
     if mstatus is None:
         raise HTTPException(status_code=404, detail=_detail("Machine status not found"))
-    
+
     # Check for duplicate code within this plant
     existing = db.scalar(
         select(Machine).where(
@@ -425,8 +435,10 @@ def create_machine(payload: MachineCreateRequest, db: Session = Depends(get_db))
         )
     )
     if existing is not None:
-        raise HTTPException(status_code=409, detail=_detail("Machine code already exists for this plant"))
-    
+        raise HTTPException(
+            status_code=409, detail=_detail("Machine code already exists for this plant")
+        )
+
     machine = Machine(
         plant_id=plant_id,
         line_id=line_id,
@@ -438,7 +450,7 @@ def create_machine(payload: MachineCreateRequest, db: Session = Depends(get_db))
     )
     db.add(machine)
     db.flush()
-    
+
     # Reload with relationships for response
     db.refresh(machine)
     return MachineResponse(

@@ -454,9 +454,7 @@ def validate_dpr_oee_sheet(ws: Worksheet) -> list[str]:
         expected_n = _norm_header(expected)
         # Part Name header in Excel has trailing space — compare loosely.
         if expected_n.lower() not in actual.lower() and actual.lower() not in expected_n.lower():
-            errors.append(
-                f"Header {letter}{HEADER_ROW}: expected ~{expected!r}, got {actual!r}"
-            )
+            errors.append(f"Header {letter}{HEADER_ROW}: expected ~{expected!r}, got {actual!r}")
 
     for letter, _code, _label in DOWNTIME_COLUMNS:
         actual_letter = _sheet_downtime_map(ws).get(letter, letter)
@@ -558,9 +556,7 @@ def _add_error(parsed: _ParsedRow, field_name: str, message: str) -> None:
     parsed.errors.append({"field": field_name, "message": message})
 
 
-def _combine_timestamp(
-    production_date: date, t: time, tz: ZoneInfo
-) -> datetime:
+def _combine_timestamp(production_date: date, t: time, tz: ZoneInfo) -> datetime:
     """Naive local wall time in plant TZ → aware TIMESTAMPTZ (no +24h invent)."""
     return datetime(
         production_date.year,
@@ -602,27 +598,20 @@ def _load_master_maps(
 ]:
     machines = {
         m.code: m
-        for m in session.scalars(
-            select(Machine).where(Machine.plant_id == plant_id)
-        ).all()
+        for m in session.scalars(select(Machine).where(Machine.plant_id == plant_id)).all()
     }
     shifts = {
-        s.code: s
-        for s in session.scalars(select(Shift).where(Shift.plant_id == plant_id)).all()
+        s.code: s for s in session.scalars(select(Shift).where(Shift.plant_id == plant_id)).all()
     }
     parts = {p.code: p for p in session.scalars(select(Part)).all()}
     operators = list(session.scalars(select(Operator)).all())
 
     downtime_rows = list(session.scalars(select(DowntimeReason)).all())
-    dt_by_col = {
-        r.excel_column: r for r in downtime_rows if r.excel_column
-    }
+    dt_by_col = {r.excel_column: r for r in downtime_rows if r.excel_column}
     dt_by_code = {r.code: r for r in downtime_rows}
 
     rejection_rows = list(session.scalars(select(RejectionReason)).all())
-    rj_by_col = {
-        r.excel_column: r for r in rejection_rows if r.excel_column
-    }
+    rj_by_col = {r.excel_column: r for r in rejection_rows if r.excel_column}
     rj_by_code = {r.code: r for r in rejection_rows}
 
     return (
@@ -637,9 +626,7 @@ def _load_master_maps(
     )
 
 
-def _resolve_operator(
-    operators: Sequence[Operator], raw: str | None
-) -> Operator | None:
+def _resolve_operator(operators: Sequence[Operator], raw: str | None) -> Operator | None:
     if not raw:
         return None
     needle = raw.strip().casefold()
@@ -712,8 +699,7 @@ def _validate_and_resolve(
         _add_error(
             parsed,
             "D",
-            f"Unknown machine code {parsed.machine_code!r} for plant "
-            f"(do not invent masters)",
+            f"Unknown machine code {parsed.machine_code!r} for plant (do not invent masters)",
         )
 
     shift = shifts.get(parsed.shift_code) if parsed.shift_code else None
@@ -721,8 +707,7 @@ def _validate_and_resolve(
         _add_error(
             parsed,
             "C",
-            f"Unknown shift code {parsed.shift_code!r} for plant "
-            f"(do not invent masters)",
+            f"Unknown shift code {parsed.shift_code!r} for plant (do not invent masters)",
         )
 
     part = parts.get(parsed.part_code) if parsed.part_code else None
@@ -798,9 +783,7 @@ def _validate_and_resolve(
         start_at = _combine_timestamp(parsed.production_date, parsed.start_time, tz)
         stop_at = _combine_timestamp(parsed.production_date, parsed.stop_time, tz)
         if stop_at >= start_at:
-            shift_min = Decimal(str((stop_at - start_at).total_seconds())) / Decimal(
-                "60"
-            )
+            shift_min = Decimal(str((stop_at - start_at).total_seconds())) / Decimal("60")
             available = shift_min - planned
             total_idle = sum((m for _, m in resolved_dt), _ZERO)
             if total_idle > available:
@@ -870,14 +853,10 @@ def _replace_child_events(
 ) -> tuple[list[DowntimeEvent], list[RejectionEvent]]:
     """Delete existing events and insert non-zero replacements."""
     session.execute(
-        delete(DowntimeEvent).where(
-            DowntimeEvent.production_record_id == production_record.id
-        )
+        delete(DowntimeEvent).where(DowntimeEvent.production_record_id == production_record.id)
     )
     session.execute(
-        delete(RejectionEvent).where(
-            RejectionEvent.production_record_id == production_record.id
-        )
+        delete(RejectionEvent).where(RejectionEvent.production_record_id == production_record.id)
     )
     session.flush()
 
@@ -951,9 +930,7 @@ def _upsert_production_record(
         record.plant_id = resolved["plant"].id
         record.machine_id = resolved["machine"].id
         record.shift_id = resolved["shift"].id
-        record.operator_id = (
-            resolved["operator"].id if resolved["operator"] else None
-        )
+        record.operator_id = resolved["operator"].id if resolved["operator"] else None
         record.part_id = resolved["part"].id
         record.production_date = resolved["production_date"]
         record.start_at = resolved["start_at"]
@@ -1023,9 +1000,7 @@ def _get_or_init_import_job(
     import_job.success_count = 0
     import_job.error_count = 0
     import_job.error_summary = None
-    session.execute(
-        delete(ImportJobRow).where(ImportJobRow.import_job_id == import_job.id)
-    )
+    session.execute(delete(ImportJobRow).where(ImportJobRow.import_job_id == import_job.id))
     session.flush()
     return import_job
 
@@ -1181,14 +1156,11 @@ def _run_ingestion_rows(
     if processed_rows == 0:
         import_job.status = "failed"
         import_job.error_summary = (
-            import_job.error_summary
-            or "No populated DPR_OEE business rows found (template empty)"
+            import_job.error_summary or "No populated DPR_OEE business rows found (template empty)"
         )
     elif success_count == 0:
         import_job.status = "failed"
-        import_job.error_summary = (
-            f"{error_count} row(s) failed validation; 0 committed"
-        )
+        import_job.error_summary = f"{error_count} row(s) failed validation; 0 committed"
     elif error_count > 0:
         import_job.status = "committed"
         import_job.error_summary = (

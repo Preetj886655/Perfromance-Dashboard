@@ -6,14 +6,24 @@
 import ReactECharts from "echarts-for-react";
 import type { DashboardAnalytics } from "./useDashboardAnalytics";
 import { KpiCard, KpiGrid } from "./KpiCard";
+import {
+  tooltipStyle,
+  axisLabelStyle,
+  yAxisStyle,
+  xAxisCategoryStyle,
+  gridStyle,
+  truncateLabel,
+  formatCompactQuantity,
+  formatExactQuantity,
+  formatPercentage,
+} from "./chartTheme";
 
 interface Props {
   analytics: DashboardAnalytics;
 }
 
 function formatPercent(value: number): string {
-  if (!isFinite(value) || isNaN(value)) return "N/A";
-  return `${value.toFixed(2)}%`;
+  return formatPercentage(value, 2);
 }
 
 export function QualitySlide({ analytics }: Props) {
@@ -24,19 +34,42 @@ export function QualitySlide({ analytics }: Props) {
   const topRejectionParts = quality.byPart.slice(0, 6);
 
   const rejectionOption = {
-    grid: { left: 80, right: 20, top: 20, bottom: 40 },
-    tooltip: { trigger: "axis" },
-    xAxis: {
-      type: "category",
-      data: topRejectionParts.map((p) => p.key.slice(0, 12)),
-      axisLabel: { fontSize: 9 },
+    grid: gridStyle({ left: 65, right: 20, top: 25, bottom: 40 }),
+    tooltip: {
+      trigger: "axis",
+      ...tooltipStyle,
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        const p = params[0];
+        const val = Number(p.value);
+        return `<div style="font-weight: 600;">${p.axisValueLabel || p.name}</div><div>Rejections: <strong>${formatCompactQuantity(val)}</strong> <span style="font-size: 11px; color: #64748B;">(${formatExactQuantity(val)} pcs)</span></div>`;
+      },
     },
-    yAxis: { type: "value", axisLabel: { fontSize: 10 } },
+    xAxis: {
+      ...xAxisCategoryStyle,
+      data: topRejectionParts.map((p) => truncateLabel(p.key, 12)),
+      axisLabel: axisLabelStyle,
+    },
+    yAxis: yAxisStyle,
     series: [
       {
+        name: "Rejections",
         type: "bar",
         data: topRejectionParts.map((p) => p.value),
-        itemStyle: { color: "#f59e0b" },
+        itemStyle: {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: "#F59E0B" },
+              { offset: 1, color: "rgba(245, 158, 11, 0.3)" },
+            ],
+          },
+          borderRadius: [3, 3, 0, 0],
+        },
       },
     ],
   };
@@ -44,22 +77,48 @@ export function QualitySlide({ analytics }: Props) {
   const topRejectionReasons = quality.byReason.slice(0, 6);
 
   const reasonOption = {
-    grid: { left: 80, right: 20, top: 20, bottom: 60 },
-    tooltip: { trigger: "axis" },
-    xAxis: {
-      type: "category",
-      data: topRejectionReasons.map((r) => (r.key.length > 16 ? `${r.key.slice(0, 14)}...` : r.key)),
-      axisLabel: { fontSize: 9, rotate: 24 },
+    grid: gridStyle({ left: 65, right: 20, top: 25, bottom: 60 }),
+    tooltip: {
+      trigger: "axis",
+      ...tooltipStyle,
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        const p = params[0];
+        const val = Number(p.value);
+        return `<div style="font-weight: 600;">${p.axisValueLabel || p.name}</div><div>Rejections: <strong>${formatCompactQuantity(val)}</strong> <span style="font-size: 11px; color: #64748B;">(${formatExactQuantity(val)} pcs)</span></div>`;
+      },
     },
-    yAxis: { type: "value", axisLabel: { fontSize: 10 } },
+    xAxis: {
+      ...xAxisCategoryStyle,
+      data: topRejectionReasons.map((r) => truncateLabel(r.key, 14)),
+      axisLabel: { ...axisLabelStyle, rotate: 24 },
+    },
+    yAxis: yAxisStyle,
     series: [
       {
+        name: "Rejections",
         type: "bar",
         data: topRejectionReasons.map((r) => r.value),
-        itemStyle: { color: "#ef4444" },
+        itemStyle: {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: "#EF4444" },
+              { offset: 1, color: "rgba(239, 68, 68, 0.3)" },
+            ],
+          },
+          borderRadius: [3, 3, 0, 0],
+        },
       },
     ],
   };
+
+  const comp = analytics.periodComparison;
+  const hasPrev = comp?.hasPreviousData;
 
   return (
     <div>
@@ -68,6 +127,8 @@ export function QualitySlide({ analytics }: Props) {
           label="Rejection Rate"
           value={rejectionRate !== null ? formatPercent(rejectionRate) : "N/A"}
           target="Target 1.5%"
+          variance={hasPrev ? `${comp.rejectionRate.formattedDelta} vs prior` : undefined}
+          varianceType={hasPrev ? comp.rejectionRate.varianceStatus : undefined}
           status={
             rejectionRate === null
               ? undefined
@@ -80,8 +141,11 @@ export function QualitySlide({ analytics }: Props) {
         />
         <KpiCard
           label="Total Rejection"
-          value={quality.totalRejection.toLocaleString()}
+          value={formatCompactQuantity(quality.totalRejection)}
+          exactValue={formatExactQuantity(quality.totalRejection)}
           target="Pieces rejected"
+          variance={hasPrev ? `${comp.rejection.formattedDelta} vs prior` : undefined}
+          varianceType={hasPrev ? comp.rejection.varianceStatus : undefined}
         />
         <KpiCard
           label="Quality (OEE factor)"

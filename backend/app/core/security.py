@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
@@ -43,11 +43,13 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return False
 
 
-def create_access_token(*, user_id: str, email: str, employee_code: str, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    *, user_id: str, email: str, employee_code: str, expires_delta: timedelta | None = None
+) -> str:
     if expires_delta is None:
         expires_delta = timedelta(minutes=settings.auth_access_token_expire_minutes)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user_id,
         "email": email,
@@ -66,7 +68,7 @@ def create_password_reset_token(user: User, *, expires_delta: timedelta | None =
         raise ValueError("User does not have a password hash configured.")
 
     fingerprint = hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user.id),
         "email": user.email,

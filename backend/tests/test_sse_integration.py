@@ -7,7 +7,7 @@ trigger rollup → create oee_snapshots → queue SSE events → emit after comm
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, time
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -15,17 +15,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db, get_engine
-from app.main import app
-from app.models.machine import Machine
+from app.db.session import get_engine
 from app.models.oee_snapshot import OeeSnapshot
 from app.models.plant import Plant
 from app.models.production_record import ProductionRecord
 from app.services.dpr_oee_ingestion import ingest_dpr_oee_workbook
 from app.services.event_queue import queue_oee_updated_event
 from app.services.oee_rollup import rollup_plant_day
-from app.services.sse import emit_oee_updated, register_sse_queue, unregister_sse_queue
-from tests.auth_helpers import make_auth_headers
+from app.services.sse import register_sse_queue, unregister_sse_queue
 from tests.test_dpr_oee_ingestion import (
     _row5_cells,
     _row6_cells,
@@ -53,9 +50,7 @@ def db_session() -> Session:
 class TestSSEIntegrationImportRollup:
     """SSE integration with import + rollup workflow."""
 
-    def test_import_creates_snapshots_and_queues_events(
-        self, db_session: Session
-    ) -> None:
+    def test_import_creates_snapshots_and_queues_events(self, db_session: Session) -> None:
         """Import → rollup → snapshot created → event queued.
 
         This test verifies that:
@@ -75,9 +70,7 @@ class TestSSEIntegrationImportRollup:
         workbook_bytes.seek(0)
 
         # Ingest
-        result = ingest_dpr_oee_workbook(
-            db_session, workbook_bytes.getvalue(), plant_id=plant.id
-        )
+        result = ingest_dpr_oee_workbook(db_session, workbook_bytes.getvalue(), plant_id=plant.id)
         assert result.status == "committed"
         assert result.success_count == 2
 
@@ -144,13 +137,11 @@ class TestSSEIntegrationImportRollup:
         workbook_bytes.seek(0)
 
         # Ingest
-        result = ingest_dpr_oee_workbook(
-            db_session, workbook_bytes.getvalue(), plant_id=plant.id
-        )
+        result = ingest_dpr_oee_workbook(db_session, workbook_bytes.getvalue(), plant_id=plant.id)
         assert result.status == "committed"
 
         # Check snapshot not yet created
-        plant_snap_before = db_session.scalar(
+        _plant_snap_before = db_session.scalar(
             select(OeeSnapshot).where(
                 OeeSnapshot.scope_type == "plant",
                 OeeSnapshot.scope_id == plant.id,
@@ -202,9 +193,7 @@ class TestSSEIntegrationImportRollup:
         workbook_bytes.seek(0)
 
         # Ingest
-        result = ingest_dpr_oee_workbook(
-            db_session, workbook_bytes.getvalue(), plant_id=plant.id
-        )
+        result = ingest_dpr_oee_workbook(db_session, workbook_bytes.getvalue(), plant_id=plant.id)
         assert result.status == "committed"
 
         # Rollup

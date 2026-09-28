@@ -153,9 +153,7 @@ def seed_role_catalog(db: Session) -> None:
 
 def get_user_roles(db: Session, user: User) -> list[Role]:
     rows = db.scalars(
-        select(Role)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .where(UserRole.user_id == user.id)
+        select(Role).join(UserRole, UserRole.role_id == Role.id).where(UserRole.user_id == user.id)
     ).all()
     return rows
 
@@ -241,7 +239,9 @@ def enforce_scope_match(
 
 
 def require_role(*allowed_codes: str):
-    def dependency(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    def dependency(
+        current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    ) -> User:
         seed_role_catalog(db)
         if not current_user.is_active:
             raise HTTPException(
@@ -260,7 +260,9 @@ def require_role(*allowed_codes: str):
 
 
 def require_permission(module: str, action: str):
-    def dependency(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    def dependency(
+        current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    ) -> User:
         seed_role_catalog(db)
         if not current_user.is_active:
             raise HTTPException(
@@ -308,16 +310,32 @@ def enforce_user_scope_for_dashboard(
             )
 
     if scope_type == "line" and scope_id is not None:
-        line = db.get(Line, UUID(str(scope_id))) if isinstance(scope_id, str) else db.get(Line, scope_id)
-        if line is not None and user.plant_id is not None and str(line.plant_id) != str(user.plant_id):
+        line = (
+            db.get(Line, UUID(str(scope_id)))
+            if isinstance(scope_id, str)
+            else db.get(Line, scope_id)
+        )
+        if (
+            line is not None
+            and user.plant_id is not None
+            and str(line.plant_id) != str(user.plant_id)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Plant access denied",
             )
 
     if scope_type == "machine" and scope_id is not None:
-        machine = db.get(Machine, UUID(str(scope_id))) if isinstance(scope_id, str) else db.get(Machine, scope_id)
-        if machine is not None and user.plant_id is not None and str(machine.plant_id) != str(user.plant_id):
+        machine = (
+            db.get(Machine, UUID(str(scope_id)))
+            if isinstance(scope_id, str)
+            else db.get(Machine, scope_id)
+        )
+        if (
+            machine is not None
+            and user.plant_id is not None
+            and str(machine.plant_id) != str(user.plant_id)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Plant access denied",

@@ -1,16 +1,16 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.db.bootstrap_admin import ensure_local_super_admin
+from app.db.bootstrap_admin import ensure_super_admin
 
 
 @patch("app.db.bootstrap_admin.seed_role_catalog")
-def test_ensure_local_super_admin_creates_when_missing(_mock_seed) -> None:
+def test_ensure_super_admin_creates_when_missing(_mock_seed) -> None:
     db = MagicMock()
     role = SimpleNamespace(id="role-1", code="SUPER_ADMIN")
     db.scalar.side_effect = [role, None, None, None]
 
-    created = ensure_local_super_admin(
+    created = ensure_super_admin(
         db,
         email="admin@example.com",
         employee_code="ADM001",
@@ -23,13 +23,13 @@ def test_ensure_local_super_admin_creates_when_missing(_mock_seed) -> None:
 
 
 @patch("app.db.bootstrap_admin.seed_role_catalog")
-def test_ensure_local_super_admin_skips_if_already_present(_mock_seed) -> None:
+def test_ensure_super_admin_skips_if_already_present(_mock_seed) -> None:
     db = MagicMock()
     role = SimpleNamespace(id="role-1", code="SUPER_ADMIN")
     existing_user = SimpleNamespace(id="user-1")
     db.scalar.side_effect = [role, existing_user]
 
-    created = ensure_local_super_admin(
+    created = ensure_super_admin(
         db,
         email="admin@example.com",
         employee_code="ADM001",

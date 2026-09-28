@@ -8,6 +8,12 @@ export type ManufacturingConnectionStatus = {
   spreadsheetId: string;
   worksheet: string;
   recordCount: number;
+  /** Earliest valid date in the dataset (ISO) — null when unknown. */
+  minDate: string | null;
+  /** Latest valid date in the dataset (ISO) — the dynamic latestSourceDate. */
+  maxDate: string | null;
+  /** True when the payload was served from the backend in-memory cache. */
+  cacheHit?: boolean;
   lastSuccessfulSync: string | null;
   lastUpdated: string | null;
   error: string | null;
@@ -86,10 +92,14 @@ export async function fetchManufacturingStatus(
 export async function fetchManufacturingDataset(
   spreadsheetId?: string,
   worksheet?: string,
+  refresh?: boolean,
 ): Promise<ManufacturingApiResponse> {
   return apiGet<ManufacturingApiResponse>("/api/manufacturing/data", {
     spreadsheet_id: spreadsheetId,
     worksheet,
+    // refresh=true forces the backend to bypass its in-memory TTL cache and
+    // fetch fresh rows from the Google Sheets API.
+    refresh: refresh ? "true" : undefined,
   });
 }
 

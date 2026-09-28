@@ -61,9 +61,7 @@ class DispatchRecord(Base):
     )
     # Actual dispatch date — nullable until shipped.
     dispatch_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True, index=True)
-    planned_dispatch_date: Mapped[dt.date | None] = mapped_column(
-        Date, nullable=True, index=True
-    )
+    planned_dispatch_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True, index=True)
     customer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(
@@ -100,10 +98,6 @@ class DispatchRecord(Base):
         onupdate=func.now(),
     )
 
-    customer: Mapped[Customer] = relationship(
-        "Customer", back_populates="dispatch_records"
-    )
+    customer: Mapped[Customer] = relationship("Customer", back_populates="dispatch_records")
     part: Mapped[Part] = relationship("Part", back_populates="dispatch_records")
-    plant: Mapped[Plant | None] = relationship(
-        "Plant", back_populates="dispatch_records"
-    )
+    plant: Mapped[Plant | None] = relationship("Plant", back_populates="dispatch_records")

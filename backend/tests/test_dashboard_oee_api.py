@@ -10,7 +10,7 @@ Covers validation items 1–19. Prior suites must remain green; Alembic head 015
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -160,8 +160,7 @@ def _snapshot(
         quality=quality,
         oee=oee,
         aggregation_rule_version=aggregation_rule_version,
-        computed_at=computed_at
-        or datetime(2026, 8, 11, 12, 0, 0, tzinfo=timezone.utc),
+        computed_at=computed_at or datetime(2026, 8, 11, 12, 0, 0, tzinfo=UTC),
     )
     session.add(row)
     session.flush()
@@ -171,9 +170,7 @@ def _snapshot(
 # --- 1–3: machine day / week / month ---
 
 
-def test_dashboard_1_machine_day_oee(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_1_machine_day_oee(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     day = date(2026, 8, 10)
@@ -207,9 +204,7 @@ def test_dashboard_1_machine_day_oee(
     assert abs(body["oee"] - 0.844815) < 1e-6
 
 
-def test_dashboard_2_machine_week_oee(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_2_machine_week_oee(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     week_start = date(2026, 8, 10)  # Monday
@@ -235,9 +230,7 @@ def test_dashboard_2_machine_week_oee(
     assert abs(response.json()["oee"] - 0.8) < 1e-6
 
 
-def test_dashboard_3_machine_month_oee(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_3_machine_month_oee(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     month_start = date(2026, 8, 1)
@@ -353,9 +346,7 @@ def test_dashboard_5_plant_oee(client: TestClient, db_session: Session) -> None:
 # --- 6: A/P/Q/OEE values ---
 
 
-def test_dashboard_6_apq_oee_values(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_6_apq_oee_values(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     day = date(2026, 8, 10)
@@ -436,9 +427,7 @@ def test_dashboard_7_machine_utilisation_null_not_computed(
 # --- 8: empty result behavior ---
 
 
-def test_dashboard_8_empty_results(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_8_empty_results(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     plant: Plant = org["plant"]  # type: ignore[assignment]
     machine: Machine = org["machine"]  # type: ignore[assignment]
@@ -492,9 +481,7 @@ def test_dashboard_8_empty_results(
 # --- 9–10: invalid scope / period ---
 
 
-def test_dashboard_9_invalid_scope_type(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_9_invalid_scope_type(client: TestClient, db_session: Session) -> None:
     _ = db_session
     response = client.get(
         "/api/v1/dashboard/oee",
@@ -509,9 +496,7 @@ def test_dashboard_9_invalid_scope_type(
     assert "scope_type" in response.json()["detail"].lower()
 
 
-def test_dashboard_10_invalid_period_type(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_10_invalid_period_type(client: TestClient, db_session: Session) -> None:
     _ = db_session
     response = client.get(
         "/api/v1/dashboard/oee",
@@ -529,9 +514,7 @@ def test_dashboard_10_invalid_period_type(
 # --- 11: nonexistent scope_id ---
 
 
-def test_dashboard_11_nonexistent_scope_id(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_11_nonexistent_scope_id(client: TestClient, db_session: Session) -> None:
     _ = db_session
     response = client.get(
         "/api/v1/dashboard/oee",
@@ -548,9 +531,7 @@ def test_dashboard_11_nonexistent_scope_id(
 # --- 12–13: trend ordering + date filtering ---
 
 
-def test_dashboard_12_13_trend_ordering_and_filter(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_12_13_trend_ordering_and_filter(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     d1, d2, d3 = date(2026, 8, 8), date(2026, 8, 9), date(2026, 8, 10)
@@ -598,9 +579,7 @@ def test_dashboard_12_13_trend_ordering_and_filter(
 # --- 14: NULL stays null (machine_utilisation) ---
 
 
-def test_dashboard_14_null_values_remain_null(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_14_null_values_remain_null(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     day = date(2026, 8, 10)
@@ -629,9 +608,7 @@ def test_dashboard_14_null_values_remain_null(
 # --- 15: aggregation_rule_version ---
 
 
-def test_dashboard_15_aggregation_rule_version(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_15_aggregation_rule_version(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     day = date(2026, 8, 10)
@@ -685,9 +662,7 @@ def test_dashboard_15_aggregation_rule_version(
 
 
 def test_dashboard_16_no_department_oee_endpoint(client: TestClient) -> None:
-    assert (
-        client.get("/api/v1/dashboard/oee/departments").status_code == 404
-    )
+    assert client.get("/api/v1/dashboard/oee/departments").status_code == 404
     assert (
         client.get(
             "/api/v1/dashboard/oee",
@@ -705,9 +680,7 @@ def test_dashboard_16_no_department_oee_endpoint(client: TestClient) -> None:
 # --- 17: API does not modify database ---
 
 
-def test_dashboard_17_api_does_not_modify_database(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_17_api_does_not_modify_database(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     day = date(2026, 8, 10)
@@ -756,9 +729,7 @@ def test_dashboard_17_api_does_not_modify_database(
 # --- summary latest ---
 
 
-def test_dashboard_summary_latest_by_period_start(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_summary_latest_by_period_start(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     machine: Machine = org["machine"]  # type: ignore[assignment]
     _snapshot(
@@ -768,7 +739,7 @@ def test_dashboard_summary_latest_by_period_start(
         period_type="day",
         period_start=date(2026, 8, 8),
         oee=Decimal("0.50"),
-        computed_at=datetime(2026, 8, 8, 10, 0, tzinfo=timezone.utc),
+        computed_at=datetime(2026, 8, 8, 10, 0, tzinfo=UTC),
     )
     latest = _snapshot(
         db_session,
@@ -777,7 +748,7 @@ def test_dashboard_summary_latest_by_period_start(
         period_type="day",
         period_start=date(2026, 8, 10),
         oee=Decimal("0.90"),
-        computed_at=datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc),
+        computed_at=datetime(2026, 8, 10, 10, 0, tzinfo=UTC),
     )
     response = client.get(
         "/api/v1/dashboard/oee/summary",
@@ -795,9 +766,7 @@ def test_dashboard_summary_latest_by_period_start(
 # --- machines list for plant ---
 
 
-def test_dashboard_machines_for_plant(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_machines_for_plant(client: TestClient, db_session: Session) -> None:
     org = _seed_org(db_session)
     plant: Plant = org["plant"]  # type: ignore[assignment]
     machine: Machine = org["machine"]  # type: ignore[assignment]

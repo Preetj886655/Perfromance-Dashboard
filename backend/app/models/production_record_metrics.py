@@ -107,29 +107,21 @@ class ProductionRecordMetrics(Base):
     # Excel G — (stop_at − start_at) in minutes; NULL when Q1 unresolved / missing
     shift_time_min: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     # Excel P — shift_time − planned_downtime; NULL when G unresolved
-    available_time_min: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 4), nullable=True
-    )
+    available_time_min: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     # Excel AB — Σ unplanned idle (blank reasons sum as 0; always defined)
     total_idle_time_min: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     # Excel AC — available − total idle; NULL when P unresolved
     run_time_min: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     # Excel M — NULL on zero/missing cavity or cycle
-    target_qty_per_hr: Mapped[Decimal | None] = mapped_column(
-        Numeric(14, 4), nullable=True
-    )
+    target_qty_per_hr: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     # Excel AE — NULL when run_time undefined or zero
-    actual_qty_per_hr: Mapped[Decimal | None] = mapped_column(
-        Numeric(14, 4), nullable=True
-    )
+    actual_qty_per_hr: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     # Excel AD (Availability A) — NULL on div-by-zero / missing
     availability: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
     # Excel AF — OEE Performance term (P); NOT machine_utilisation
     performance: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
     # Excel AG — Machine Utilisation; parallel KPI, NOT the OEE P term
-    machine_utilisation: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 8), nullable=True
-    )
+    machine_utilisation: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
     # Excel AR — always defined (blank rejections sum as 0)
     total_rejection_qty: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
     # Excel AS — NULL when produced_qty = 0

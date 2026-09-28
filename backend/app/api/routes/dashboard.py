@@ -233,9 +233,7 @@ def get_dashboard_oee(
 def get_dashboard_oee_summary(
     scope_type: str = Query(..., description="machine | line | plant"),
     scope_id: UUID = Query(...),
-    period_type: str | None = Query(
-        None, description="Optional filter: day | week | month"
-    ),
+    period_type: str | None = Query(None, description="Optional filter: day | week | month"),
     aggregation_rule_version: int = Query(AGGREGATION_RULE_VERSION),
     db: Session = Depends(get_db),
 ) -> OeeSnapshotResponse:
@@ -281,9 +279,7 @@ def get_dashboard_oee_trend(
     if period_start_from > period_start_to:
         raise HTTPException(
             status_code=422,
-            detail=_safe_detail(
-                "period_start_from must be on or before period_start_to"
-            ),
+            detail=_safe_detail("period_start_from must be on or before period_start_to"),
         )
     rows = svc.list_oee_trend(
         db,

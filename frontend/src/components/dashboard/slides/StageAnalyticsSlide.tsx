@@ -9,7 +9,17 @@ import ReactECharts from "echarts-for-react";
 import type { DashboardAnalytics } from "./useDashboardAnalytics";
 import { KpiCard, KpiGrid } from "./KpiCard";
 import { ChartCard } from "./ChartCard";
-import { CHART_COLORS, abbreviateNumber, truncateLabel, xAxisCategoryStyle, yAxisStyle, gridStyle, axisLabelStyle } from "./chartTheme";
+import {
+  CHART_COLORS,
+  tooltipStyle,
+  truncateLabel,
+  xAxisCategoryStyle,
+  yAxisStyle,
+  gridStyle,
+  axisLabelStyle,
+  formatCompactQuantity,
+  formatExactQuantity,
+} from "./chartTheme";
 
 interface Props {
   analytics: DashboardAnalytics;
@@ -24,12 +34,25 @@ export function StageAnalyticsSlide({ analytics }: Props) {
 
   const topStageProd = byStage[0];
   const topStageDown = downtimeByStage[0];
+  const totalStageLoss = topLossStages.reduce((s, v) => s + v.minutes, 0);
 
   const stageOption = {
     grid: gridStyle({ left: 80, bottom: 50 }),
-    tooltip: { trigger: "axis", valueFormatter: (v: number) => abbreviateNumber(v) },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        const p = params[0];
+        const val = typeof p.value === "number" ? p.value : 0;
+        return `<strong>${p.name}</strong><br/>Production: <strong>${formatCompactQuantity(val)} NOS</strong> (${formatExactQuantity(val)} NOS)`;
+      },
+    },
     xAxis: { ...xAxisCategoryStyle, data: topStages.map((s) => truncateLabel(s.key, 12)), axisLabel: { ...axisLabelStyle, rotate: 20 } },
-    yAxis: yAxisStyle,
+    yAxis: {
+      ...yAxisStyle,
+      axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+    },
     series: [
       { name: "Production", type: "bar" as const, data: topStages.map((s) => Math.round(s.production)), itemStyle: { color: CHART_COLORS.stage } },
     ],
@@ -37,10 +60,25 @@ export function StageAnalyticsSlide({ analytics }: Props) {
 
   const targetVsActualOption = {
     grid: gridStyle({ left: 80, bottom: 50 }),
-    tooltip: { trigger: "axis" },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        let str = `<strong>${params[0].name}</strong><br/>`;
+        params.forEach((p) => {
+          const val = typeof p.value === "number" ? p.value : 0;
+          str += `${p.marker} ${p.seriesName}: <strong>${formatCompactQuantity(val)}</strong> (${formatExactQuantity(val)} NOS)<br/>`;
+        });
+        return str;
+      },
+    },
     legend: { data: ["Target", "Actual"], top: 0, textStyle: { fontSize: 10 } },
     xAxis: { ...xAxisCategoryStyle, data: topStages.map((s) => truncateLabel(s.key, 12)), axisLabel: { ...axisLabelStyle, rotate: 20 } },
-    yAxis: yAxisStyle,
+    yAxis: {
+      ...yAxisStyle,
+      axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+    },
     series: [
       { name: "Target", type: "bar" as const, data: topStages.map((s) => Math.round(s.target)), itemStyle: { color: CHART_COLORS.target } },
       { name: "Actual", type: "bar" as const, data: topStages.map((s) => Math.round(s.production)), itemStyle: { color: CHART_COLORS.prod } },
@@ -49,9 +87,21 @@ export function StageAnalyticsSlide({ analytics }: Props) {
 
   const downtimeOption = {
     grid: gridStyle({ left: 80, bottom: 50 }),
-    tooltip: { trigger: "axis", valueFormatter: (v: number) => `${Math.round(v)} min` },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        const p = params[0];
+        const val = typeof p.value === "number" ? p.value : 0;
+        return `<strong>${p.name}</strong><br/>Downtime: <strong>${formatCompactQuantity(val)} min</strong> (${formatExactQuantity(val)} min)`;
+      },
+    },
     xAxis: { ...xAxisCategoryStyle, data: topDowntimeStages.map((s) => truncateLabel(s.key, 12)), axisLabel: { ...axisLabelStyle, rotate: 20 } },
-    yAxis: yAxisStyle,
+    yAxis: {
+      ...yAxisStyle,
+      axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+    },
     series: [
       { name: "Downtime (min)", type: "bar" as const, data: topDowntimeStages.map((s) => Math.round(s.minutes)), itemStyle: { color: CHART_COLORS.downtime } },
     ],
@@ -59,9 +109,21 @@ export function StageAnalyticsSlide({ analytics }: Props) {
 
   const lossOption = {
     grid: gridStyle({ left: 80, bottom: 50 }),
-    tooltip: { trigger: "axis", valueFormatter: (v: number) => abbreviateNumber(v) },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        const p = params[0];
+        const val = typeof p.value === "number" ? p.value : 0;
+        return `<strong>${p.name}</strong><br/>Prod Loss: <strong>${formatCompactQuantity(val)} NOS</strong> (${formatExactQuantity(val)} NOS)`;
+      },
+    },
     xAxis: { ...xAxisCategoryStyle, data: topLossStages.map((s) => truncateLabel(s.key, 12)), axisLabel: { ...axisLabelStyle, rotate: 20 } },
-    yAxis: yAxisStyle,
+    yAxis: {
+      ...yAxisStyle,
+      axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+    },
     series: [
       { name: "Prod Loss (NOS)", type: "bar" as const, data: topLossStages.map((s) => Math.round(s.minutes)), itemStyle: { color: CHART_COLORS.loss } },
     ],
@@ -73,13 +135,13 @@ export function StageAnalyticsSlide({ analytics }: Props) {
         <KpiCard
           label="Top Stage (Production)"
           value={topStageProd ? truncateLabel(topStageProd.key, 14) : "N/A"}
-          target={topStageProd ? `${abbreviateNumber(topStageProd.production)} units` : ""}
+          target={topStageProd ? `${formatCompactQuantity(topStageProd.production)} (${formatExactQuantity(topStageProd.production)} units)` : ""}
           status="Good"
         />
         <KpiCard
           label="Top Stage (Downtime)"
           value={topStageDown ? truncateLabel(topStageDown.key, 14) : "N/A"}
-          target={topStageDown ? `${abbreviateNumber(topStageDown.minutes)} min` : ""}
+          target={topStageDown ? `${formatCompactQuantity(topStageDown.minutes)} min (${formatExactQuantity(topStageDown.minutes)} min)` : ""}
           status="Critical"
         />
         <KpiCard
@@ -89,7 +151,9 @@ export function StageAnalyticsSlide({ analytics }: Props) {
         />
         <KpiCard
           label="Production Loss"
-          value={abbreviateNumber(topLossStages.reduce((s, v) => s + v.minutes, 0))}
+          value={formatCompactQuantity(totalStageLoss)}
+          exactValue={formatExactQuantity(totalStageLoss)}
+          unit="NOS"
           target="Across all stages"
         />
       </KpiGrid>

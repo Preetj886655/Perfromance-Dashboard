@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -60,6 +60,14 @@ def _make_user(
     active: bool = True,
     password_hash: str | None | object = _HASH_SENTINEL,
 ) -> User:
+    existing = session.scalars(
+        select(User).where(or_(User.email == email, User.employee_code == employee_code))
+    ).all()
+    for u in existing:
+        session.delete(u)
+    if existing:
+        session.flush()
+
     if password_hash is _HASH_SENTINEL:
         password_hash = hash_password(password)
     user = User(
@@ -74,7 +82,9 @@ def _make_user(
 
 
 def test_auth_login_valid_by_email(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="alice@patil.local", employee_code="EMP-1001", password="Secret123!")
+    user = _make_user(
+        db_session, email="alice@patil.local", employee_code="EMP-1001", password="Secret123!"
+    )
 
     response = client.post(
         "/api/v1/auth/login",
@@ -91,7 +101,9 @@ def test_auth_login_valid_by_email(client: TestClient, db_session: Session) -> N
 
 
 def test_auth_login_valid_by_employee_code(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="bob@patil.local", employee_code="EMP-2002", password="PassWord99!")
+    user = _make_user(
+        db_session, email="bob@patil.local", employee_code="EMP-2002", password="PassWord99!"
+    )
 
     response = client.post(
         "/api/v1/auth/login",
@@ -103,7 +115,9 @@ def test_auth_login_valid_by_employee_code(client: TestClient, db_session: Sessi
 
 
 def test_auth_login_invalid_password(client: TestClient, db_session: Session) -> None:
-    _make_user(db_session, email="charlie@patil.local", employee_code="EMP-3003", password="RightPass!1")
+    _make_user(
+        db_session, email="charlie@patil.local", employee_code="EMP-3003", password="RightPass!1"
+    )
 
     response = client.post(
         "/api/v1/auth/login",
@@ -124,7 +138,13 @@ def test_auth_login_nonexistent_user(client: TestClient) -> None:
 
 
 def test_auth_login_inactive_user(client: TestClient, db_session: Session) -> None:
-    _make_user(db_session, email="dora@patil.local", employee_code="EMP-4004", password="Inactive123!", active=False)
+    _make_user(
+        db_session,
+        email="dora@patil.local",
+        employee_code="EMP-4004",
+        password="Inactive123!",
+        active=False,
+    )
 
     response = client.post(
         "/api/v1/auth/login",
@@ -136,7 +156,13 @@ def test_auth_login_inactive_user(client: TestClient, db_session: Session) -> No
 
 
 def test_auth_login_missing_password_hash(client: TestClient, db_session: Session) -> None:
-    _make_user(db_session, email="erin@patil.local", employee_code="EMP-5005", password="Secret!", password_hash=None)
+    _make_user(
+        db_session,
+        email="erin@patil.local",
+        employee_code="EMP-5005",
+        password="Secret!",
+        password_hash=None,
+    )
 
     response = client.post(
         "/api/v1/auth/login",
@@ -148,17 +174,25 @@ def test_auth_login_missing_password_hash(client: TestClient, db_session: Sessio
 
 
 def test_auth_create_access_token_and_decode(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="frank@patil.local", employee_code="EMP-6006", password="TokenPass!7")
+    user = _make_user(
+        db_session, email="frank@patil.local", employee_code="EMP-6006", password="TokenPass!7"
+    )
 
-    token = create_access_token(user_id=str(user.id), email=user.email, employee_code=user.employee_code)
+    token = create_access_token(
+        user_id=str(user.id), email=user.email, employee_code=user.employee_code
+    )
     assert isinstance(token, str)
     assert token.startswith("eyJ")
     assert verify_password("TokenPass!7", user.password_hash)
 
 
 def test_auth_dependency_accepts_valid_token(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="gina@patil.local", employee_code="EMP-7007", password="AuthPass!1")
-    token = create_access_token(user_id=str(user.id), email=user.email, employee_code=user.employee_code)
+    user = _make_user(
+        db_session, email="gina@patil.local", employee_code="EMP-7007", password="AuthPass!1"
+    )
+    token = create_access_token(
+        user_id=str(user.id), email=user.email, employee_code=user.employee_code
+    )
 
     response = client.get(
         "/api/v1/auth/me",
@@ -182,8 +216,12 @@ def test_auth_dependency_rejects_invalid_token(client: TestClient) -> None:
 
 
 def test_auth_dependency_rejects_tampered_token(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="henry@patil.local", employee_code="EMP-8008", password="TamperPass!9")
-    token = create_access_token(user_id=str(user.id), email=user.email, employee_code=user.employee_code)
+    user = _make_user(
+        db_session, email="henry@patil.local", employee_code="EMP-8008", password="TamperPass!9"
+    )
+    token = create_access_token(
+        user_id=str(user.id), email=user.email, employee_code=user.employee_code
+    )
     tampered = token + "A"
 
     response = client.get(
@@ -195,15 +233,21 @@ def test_auth_dependency_rejects_tampered_token(client: TestClient, db_session: 
 
 
 def test_auth_dependency_rejects_expired_token(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="ian@patil.local", employee_code="EMP-9009", password="ExpiredPass!1")
+    user = _make_user(
+        db_session, email="ian@patil.local", employee_code="EMP-9009", password="ExpiredPass!1"
+    )
     expired_payload = {
         "sub": str(user.id),
         "email": user.email,
         "employee_code": user.employee_code,
-        "iat": int(datetime.now(timezone.utc).timestamp()) - 3600,
-        "exp": int((datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp()),
+        "iat": int(datetime.now(UTC).timestamp()) - 3600,
+        "exp": int((datetime.now(UTC) - timedelta(minutes=5)).timestamp()),
     }
-    expired = jwt.encode(expired_payload, settings.auth_secret_key or "dev-token-secret", algorithm=settings.auth_algorithm)
+    expired = jwt.encode(
+        expired_payload,
+        settings.auth_secret_key or "dev-token-secret",
+        algorithm=settings.auth_algorithm,
+    )
 
     response = client.get(
         "/api/v1/auth/me",
@@ -219,7 +263,9 @@ def test_health_remains_public_without_auth(client: TestClient) -> None:
 
 
 def test_auth_secret_not_exposed_in_login_response(client: TestClient, db_session: Session) -> None:
-    _make_user(db_session, email="ivy@patil.local", employee_code="EMP-9009", password="PublicPass!9")
+    _make_user(
+        db_session, email="ivy@patil.local", employee_code="EMP-9009", password="PublicPass!9"
+    )
     response = client.post(
         "/api/v1/auth/login",
         json={"email_or_employee_code": "ivy@patil.local", "password": "PublicPass!9"},
@@ -236,8 +282,12 @@ def test_hash_password_does_not_equal_plaintext() -> None:
     assert hashed.startswith("$2b$")
 
 
-def test_auth_forgot_password_returns_generic_response(client: TestClient, db_session: Session) -> None:
-    _make_user(db_session, email="julia@patil.local", employee_code="EMP-1111", password="Secret123!")
+def test_auth_forgot_password_returns_generic_response(
+    client: TestClient, db_session: Session
+) -> None:
+    _make_user(
+        db_session, email="julia@patil.local", employee_code="EMP-1111", password="Secret123!"
+    )
 
     response = client.post(
         "/api/v1/auth/forgot-password",
@@ -245,11 +295,18 @@ def test_auth_forgot_password_returns_generic_response(client: TestClient, db_se
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["detail"] == "If the account exists, password reset instructions have been provided."
+    assert (
+        response.json()["detail"]
+        == "If the account exists, password reset instructions have been provided."
+    )
 
 
-def test_auth_reset_password_valid_token_updates_hash(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="karen@patil.local", employee_code="EMP-1212", password="OldPass!23")
+def test_auth_reset_password_valid_token_updates_hash(
+    client: TestClient, db_session: Session
+) -> None:
+    user = _make_user(
+        db_session, email="karen@patil.local", employee_code="EMP-1212", password="OldPass!23"
+    )
     token = create_password_reset_token(user)
 
     response = client.post(
@@ -269,7 +326,9 @@ def test_auth_reset_password_valid_token_updates_hash(client: TestClient, db_ses
 
 
 def test_auth_reset_password_rejects_expired_token(client: TestClient, db_session: Session) -> None:
-    user = _make_user(db_session, email="leo@patil.local", employee_code="EMP-1313", password="OldPass!23")
+    user = _make_user(
+        db_session, email="leo@patil.local", employee_code="EMP-1313", password="OldPass!23"
+    )
     token = create_password_reset_token(user, expires_delta=timedelta(minutes=-5))
 
     response = client.post(
@@ -286,7 +345,9 @@ def test_auth_reset_password_rejects_expired_token(client: TestClient, db_sessio
 
 
 def test_auth_reset_password_rejects_invalid_token(client: TestClient, db_session: Session) -> None:
-    _make_user(db_session, email="maya@patil.local", employee_code="EMP-1414", password="OldPass!23")
+    _make_user(
+        db_session, email="maya@patil.local", employee_code="EMP-1414", password="OldPass!23"
+    )
 
     response = client.post(
         "/api/v1/auth/reset-password",

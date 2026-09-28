@@ -66,6 +66,4 @@ class Material(Base):
     inventory_snapshots: Mapped[list[InventorySnapshot]] = relationship(
         "InventorySnapshot", back_populates="material"
     )
-    grn_records: Mapped[list[GrnRecord]] = relationship(
-        "GrnRecord", back_populates="material"
-    )
+    grn_records: Mapped[list[GrnRecord]] = relationship("GrnRecord", back_populates="material")

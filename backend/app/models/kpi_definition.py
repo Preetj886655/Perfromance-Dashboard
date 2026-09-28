@@ -67,9 +67,7 @@ class KpiDefinition(Base):
             "effective_from",
         ),
         CheckConstraint(
-            "aggregation_method IN ("
-            "'SUM', 'RATIO_OF_SUMS', 'COUNT', 'LATEST', 'WAVG'"
-            ")",
+            "aggregation_method IN ('SUM', 'RATIO_OF_SUMS', 'COUNT', 'LATEST', 'WAVG')",
             name="ck_kpi_definitions_aggregation_method",
         ),
         CheckConstraint(
@@ -111,12 +109,8 @@ class KpiDefinition(Base):
     # VARCHAR + CHECK (not PG ENUM): Stage A aggregation methods.
     aggregation_method: Mapped[str] = mapped_column(String(32), nullable=False)
     target: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
-    warning_threshold: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 6), nullable=True
-    )
-    critical_threshold: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 6), nullable=True
-    )
+    warning_threshold: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    critical_threshold: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     # Q17 TBC — admin-configurable; no DB CHECK forcing equal weights.
     weight: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     # App-validated frequency label (e.g. shift/day/week/month) — not PG ENUM.

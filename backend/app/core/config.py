@@ -7,9 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve .env relative to this file so it works regardless of the CWD
 # from which uvicorn is launched (e.g., project root vs backend/).
-_ENV_FILE = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-)
+_ENV_FILE = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 
 class Settings(BaseSettings):
@@ -25,6 +23,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://patilgroup-perfromance-dashboard.vercel.app",
+        "https://patilgroup-perfromance-dashboard-git-main-patil-group.vercel.app",
+        "https://patilgroup-perfromance-dashboard-iad1s4qau-patil-group.vercel.app",
     ]
 
     auth_secret_key: str = ""
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
     # Google Sheets service-account credential (file path or inline JSON).
     # Can be set via env var GOOGLE_SERVICE_ACCOUNT_JSON or in .env file.
     google_service_account_json: str = ""
+    google_service_account_file: str = ""
     google_service_account_credentials: str = ""
     google_sheets_credentials_json: str = ""
     google_sheets_service_account_json: str = ""

@@ -148,8 +148,8 @@ GOOGLE_SHEETS_DEFAULT_WORKSHEET=Sheet1
 GOOGLE_SHEETS_CACHE_TTL_SECONDS=45
 
 # Google service account — choose ONE of:
-# Option A: Inline JSON (keep in a secret manager, not .env)
-GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"...","private_key":"..."}
+# Option A: Inline JSON (keep in a secret manager, not in tracked files)
+GOOGLE_SERVICE_ACCOUNT_JSON=<configured securely in environment>
 
 # Option B: File path to service account JSON (recommended for local dev)
 GOOGLE_SERVICE_ACCOUNT_JSON=/absolute/path/to/service-account.json

@@ -271,6 +271,11 @@ function toIsoDate(value: unknown): string | null {
   const raw = String(value).trim();
   if (!raw) return null;
 
+  // Already a canonical ISO date (yyyy-mm-dd) — return directly without timezone shift
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
   // Manufacturing exports commonly use dd-mm-yyyy / dd/mm/yyyy / dd.mm.yyyy
   // (e.g. "31-08-2024"). Parse these explicitly before falling back to the
   // browser parser so the canonical date is always ISO yyyy-mm-dd.

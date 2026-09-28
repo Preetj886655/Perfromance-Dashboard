@@ -10,10 +10,9 @@ This is the mandatory acceptance test for SSE implementation.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.session import get_engine, get_session_factory
+from app.db.session import get_engine
 from app.models.plant import Plant
 from app.services.event_queue import (
     clear_pending_events,
@@ -59,9 +58,10 @@ class TestEventQueueRollback:
 
     def test_queue_event_on_session(self, session_with_rollback: Session) -> None:
         """Events can be queued on session metadata."""
-        from app.services.event_queue import _SESSION_EVENTS_KEY
         from datetime import date
         from uuid import UUID
+
+        from app.services.event_queue import _SESSION_EVENTS_KEY
 
         plant_id = UUID("11111111-1111-1111-1111-111111111111")
         queue_oee_updated_event(
@@ -80,9 +80,10 @@ class TestEventQueueRollback:
 
     def test_no_duplicate_events_queued(self, session_with_rollback: Session) -> None:
         """Same event should not be queued twice."""
-        from app.services.event_queue import _SESSION_EVENTS_KEY
         from datetime import date
         from uuid import UUID
+
+        from app.services.event_queue import _SESSION_EVENTS_KEY
 
         plant_id = UUID("11111111-1111-1111-1111-111111111111")
         queue_oee_updated_event(
@@ -105,9 +106,10 @@ class TestEventQueueRollback:
 
     def test_multiple_different_events_queued(self, session_with_rollback: Session) -> None:
         """Different events should be queued separately."""
-        from app.services.event_queue import _SESSION_EVENTS_KEY
         from datetime import date
         from uuid import UUID
+
+        from app.services.event_queue import _SESSION_EVENTS_KEY
 
         machine1 = UUID("22222222-2222-2222-2222-222222222222")
         machine2 = UUID("33333333-3333-3333-3333-333333333333")
@@ -132,9 +134,10 @@ class TestEventQueueRollback:
 
     def test_clear_pending_events(self, session_with_rollback: Session) -> None:
         """Clearing events removes them from session."""
-        from app.services.event_queue import _SESSION_EVENTS_KEY
         from datetime import date
         from uuid import UUID
+
+        from app.services.event_queue import _SESSION_EVENTS_KEY
 
         plant_id = UUID("11111111-1111-1111-1111-111111111111")
         queue_oee_updated_event(
@@ -151,7 +154,6 @@ class TestEventQueueRollback:
 
     def test_emit_pending_events_broadcasts(self, session_with_rollback: Session) -> None:
         """Emitting queued events sends them to all registered clients."""
-        from app.services.event_queue import _SESSION_EVENTS_KEY
         from datetime import date
         from uuid import UUID
 
@@ -179,13 +181,12 @@ class TestEventQueueRollback:
         finally:
             unregister_sse_queue(queue_key)
 
-    def test_emit_clears_queue_after_emission(
-        self, session_with_rollback: Session
-    ) -> None:
+    def test_emit_clears_queue_after_emission(self, session_with_rollback: Session) -> None:
         """Emitting events clears them from session."""
-        from app.services.event_queue import _SESSION_EVENTS_KEY
         from datetime import date
         from uuid import UUID
+
+        from app.services.event_queue import _SESSION_EVENTS_KEY
 
         plant_id = UUID("11111111-1111-1111-1111-111111111111")
         queue_oee_updated_event(
@@ -200,9 +201,7 @@ class TestEventQueueRollback:
         emit_pending_events(session_with_rollback)
         assert _SESSION_EVENTS_KEY not in session_with_rollback.info
 
-    def test_event_emission_without_listeners_is_safe(
-        self, session_with_rollback: Session
-    ) -> None:
+    def test_event_emission_without_listeners_is_safe(self, session_with_rollback: Session) -> None:
         """Emitting events with no registered listeners should not fail."""
         from datetime import date
         from uuid import UUID

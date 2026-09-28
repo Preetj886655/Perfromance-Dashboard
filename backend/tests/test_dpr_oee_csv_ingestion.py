@@ -132,9 +132,7 @@ def test_csv_happy_path_distinct_keys_and_source_type(
     plant = masters["plant"]
     _seed_second_machine(db_session, masters)
 
-    content = _write_minimal_csv(
-        rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")]
-    )
+    content = _write_minimal_csv(rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")])
     result = ingest_dpr_oee_csv(db_session, content, plant_id=plant.id)
 
     assert result.status == "committed"
@@ -148,9 +146,7 @@ def test_csv_happy_path_distinct_keys_and_source_type(
 
     records = list(
         db_session.scalars(
-            select(ProductionRecord).where(
-                ProductionRecord.id.in_(result.production_record_ids)
-            )
+            select(ProductionRecord).where(ProductionRecord.id.in_(result.production_record_ids))
         ).all()
     )
     assert len(records) == 2
@@ -229,9 +225,7 @@ def test_csv_idempotent_reimport_updates_not_duplicates(db_session: Session) -> 
     masters = _seed_masters_for_real_xlsx(db_session)
     plant = masters["plant"]
     _seed_second_machine(db_session, masters)
-    content = _write_minimal_csv(
-        rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")]
-    )
+    content = _write_minimal_csv(rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")])
 
     first = ingest_dpr_oee_csv(db_session, content, plant_id=plant.id)
     assert first.success_count == 2
@@ -393,9 +387,7 @@ def test_csv_no_leftover_when_rolled_back(db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant = masters["plant"]
     _seed_second_machine(db_session, masters)
-    content = _write_minimal_csv(
-        rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")]
-    )
+    content = _write_minimal_csv(rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")])
     before = db_session.scalar(select(func.count()).select_from(ProductionRecord))
     ingest_dpr_oee_csv(db_session, content, plant_id=plant.id)
     after = db_session.scalar(select(func.count()).select_from(ProductionRecord))

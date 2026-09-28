@@ -58,19 +58,11 @@ def seed_rejection_reasons() -> dict[str, int]:
 
     session_factory = get_session_factory()
     with session_factory() as session:
-        before = int(
-            session.scalar(select(func.count()).select_from(RejectionReason)) or 0
-        )
-        stmt = (
-            insert(RejectionReason)
-            .values(rows)
-            .on_conflict_do_nothing(index_elements=["code"])
-        )
+        before = int(session.scalar(select(func.count()).select_from(RejectionReason)) or 0)
+        stmt = insert(RejectionReason).values(rows).on_conflict_do_nothing(index_elements=["code"])
         session.execute(stmt)
         session.commit()
-        after = int(
-            session.scalar(select(func.count()).select_from(RejectionReason)) or 0
-        )
+        after = int(session.scalar(select(func.count()).select_from(RejectionReason)) or 0)
 
     inserted = max(0, after - before)
     skipped = max(0, len(rows) - inserted)
@@ -95,10 +87,7 @@ def _verify_and_print() -> None:
 
 
 def main() -> int:
-    print(
-        f"Seed target: {settings.postgres_host}:{settings.postgres_port}/"
-        f"{settings.postgres_db}"
-    )
+    print(f"Seed target: {settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}")
     with get_engine().connect() as conn:
         row = conn.execute(
             text(

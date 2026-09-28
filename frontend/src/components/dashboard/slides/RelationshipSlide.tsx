@@ -9,7 +9,16 @@ import ReactECharts from "echarts-for-react";
 import type { DashboardAnalytics } from "./useDashboardAnalytics";
 import { KpiCard, KpiGrid } from "./KpiCard";
 import { ChartCard } from "./ChartCard";
-import { CHART_COLORS, abbreviateNumber, truncateLabel, xAxisCategoryStyle, axisLabelStyle, gridStyle } from "./chartTheme";
+import {
+  CHART_COLORS,
+  tooltipStyle,
+  truncateLabel,
+  xAxisCategoryStyle,
+  axisLabelStyle,
+  gridStyle,
+  formatCompactQuantity,
+  formatExactQuantity,
+} from "./chartTheme";
 
 interface Props {
   analytics: DashboardAnalytics;
@@ -33,10 +42,36 @@ export function RelationshipSlide({ analytics }: Props) {
 
   const wcOption = {
     grid: gridStyle({ left: 90, bottom: 50 }),
-    tooltip: { trigger: "axis" },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      formatter: (params: Array<{ marker: string; seriesName: string; value: number }>) => {
+        let str = "";
+        params.forEach((p) => {
+          const isDt = p.seriesName.includes("Downtime");
+          const unit = isDt ? "min" : "NOS";
+          str += `${p.marker} ${p.seriesName}: <strong>${formatCompactQuantity(p.value)} ${unit}</strong> <span style="font-size:0.75rem;opacity:0.8">(${formatExactQuantity(p.value)} ${unit})</span><br/>`;
+        });
+        return str;
+      },
+    },
     legend: { data: ["Downtime (min)", "Prod Loss (NOS)"], top: 0, textStyle: { fontSize: 10 } },
     xAxis: { ...xAxisCategoryStyle, data: wcComparison.map((d) => truncateLabel(d.key, 14)), axisLabel: { ...axisLabelStyle, rotate: 25 } },
-    yAxis: [{ type: "value" as const, name: "min", axisLabel: axisLabelStyle, nameTextStyle: { fontSize: 9 } }, { type: "value" as const, name: "NOS", axisLabel: axisLabelStyle, nameTextStyle: { fontSize: 9 }, splitLine: { show: false } }],
+    yAxis: [
+      {
+        type: "value" as const,
+        name: "min",
+        axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+        nameTextStyle: { fontSize: 9 },
+      },
+      {
+        type: "value" as const,
+        name: "NOS",
+        axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+        nameTextStyle: { fontSize: 9 },
+        splitLine: { show: false },
+      },
+    ],
     series: [
       { name: "Downtime (min)", type: "bar" as const, data: wcComparison.map((d) => Math.round(d.downtime)), itemStyle: { color: CHART_COLORS.downtime } },
       { name: "Prod Loss (NOS)", type: "bar" as const, yAxisIndex: 1, data: wcComparison.map((d) => Math.round(d.loss)), itemStyle: { color: CHART_COLORS.loss } },
@@ -45,10 +80,36 @@ export function RelationshipSlide({ analytics }: Props) {
 
   const stageOption = {
     grid: gridStyle({ left: 90, bottom: 50 }),
-    tooltip: { trigger: "axis" },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      formatter: (params: Array<{ marker: string; seriesName: string; value: number }>) => {
+        let str = "";
+        params.forEach((p) => {
+          const isDt = p.seriesName.includes("Downtime");
+          const unit = isDt ? "min" : "NOS";
+          str += `${p.marker} ${p.seriesName}: <strong>${formatCompactQuantity(p.value)} ${unit}</strong> <span style="font-size:0.75rem;opacity:0.8">(${formatExactQuantity(p.value)} ${unit})</span><br/>`;
+        });
+        return str;
+      },
+    },
     legend: { data: ["Downtime (min)", "Prod Loss (NOS)"], top: 0, textStyle: { fontSize: 10 } },
     xAxis: { ...xAxisCategoryStyle, data: stageComparison.map((d) => truncateLabel(d.key, 12)), axisLabel: { ...axisLabelStyle, rotate: 25 } },
-    yAxis: [{ type: "value" as const, name: "min", axisLabel: axisLabelStyle, nameTextStyle: { fontSize: 9 } }, { type: "value" as const, name: "NOS", axisLabel: axisLabelStyle, nameTextStyle: { fontSize: 9 }, splitLine: { show: false } }],
+    yAxis: [
+      {
+        type: "value" as const,
+        name: "min",
+        axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+        nameTextStyle: { fontSize: 9 },
+      },
+      {
+        type: "value" as const,
+        name: "NOS",
+        axisLabel: { ...axisLabelStyle, formatter: (v: number) => formatCompactQuantity(v) },
+        nameTextStyle: { fontSize: 9 },
+        splitLine: { show: false },
+      },
+    ],
     series: [
       { name: "Downtime (min)", type: "bar" as const, data: stageComparison.map((d) => Math.round(d.downtime)), itemStyle: { color: CHART_COLORS.downtime } },
       { name: "Prod Loss (NOS)", type: "bar" as const, yAxisIndex: 1, data: stageComparison.map((d) => Math.round(d.loss)), itemStyle: { color: CHART_COLORS.loss } },
@@ -63,13 +124,16 @@ export function RelationshipSlide({ analytics }: Props) {
       <KpiGrid>
         <KpiCard
           label="Total Downtime"
-          value={`${abbreviateNumber(totalDowntime)} min`}
+          value={`${formatCompactQuantity(totalDowntime)} min`}
+          exactValue={`${formatExactQuantity(totalDowntime)} min`}
           target="Planned + Unplanned"
           status="Warning"
         />
         <KpiCard
           label="Total Prod Loss"
-          value={abbreviateNumber(totalProductionLoss)}
+          value={formatCompactQuantity(totalProductionLoss)}
+          exactValue={formatExactQuantity(totalProductionLoss)}
+          unit="NOS"
           target="Units lost (NOS)"
           status="Critical"
         />

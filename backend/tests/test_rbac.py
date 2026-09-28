@@ -46,13 +46,21 @@ def client(db_session: Session) -> TestClient:
 
 def test_rbac_1_super_admin_dashboard_access(client: TestClient, db_session: Session) -> None:
     _, headers = make_auth_headers(db_session, role_code="SUPER_ADMIN")
-    response = client.get("/api/v1/dashboard/oee/plants", params={"period_type": "day", "period_start": "2026-08-10"}, headers=headers)
+    response = client.get(
+        "/api/v1/dashboard/oee/plants",
+        params={"period_type": "day", "period_start": "2026-08-10"},
+        headers=headers,
+    )
     assert response.status_code in {200, 404}
 
 
 def test_rbac_2_viewer_dashboard_read(client: TestClient, db_session: Session) -> None:
     _, headers = make_auth_headers(db_session, role_code="VIEWER")
-    response = client.get("/api/v1/dashboard/oee/plants", params={"period_type": "day", "period_start": "2026-08-10"}, headers=headers)
+    response = client.get(
+        "/api/v1/dashboard/oee/plants",
+        params={"period_type": "day", "period_start": "2026-08-10"},
+        headers=headers,
+    )
     assert response.status_code in {200, 404}
 
 
@@ -71,7 +79,8 @@ def test_rbac_4_operator_allowed_production_access(client: TestClient, db_sessio
 
 def test_rbac_5_unauthorized_role_forbidden(client: TestClient, db_session: Session) -> None:
     _, headers = make_auth_headers(db_session, role_code="VIEWER")
-    # Permission check is route-based; this route is protected by a permission dependency in the next stage.
+    # Permission check is route-based;
+    # this route is protected by a permission dependency in the next stage.
     response = client.get("/api/v1/auth/me", headers=headers)
     assert response.status_code == 200
 
@@ -111,7 +120,12 @@ def test_rbac_9_inactive_user_denied(client: TestClient, db_session: Session) ->
     db_session.add(UserRole(user_id=user.id, role_id=role.id))
     db_session.flush()
 
-    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkhXVCJ9.eyJzdWIiOiI0ZDA0MGQwMC04MjM1LTQ4YjEtYWJjMC1kYjdhYWJjN2ZkZmIiLCJlbWFpbCI6ImluYWN0aXZlLWF0cGlsLmxvY2FsIiwiZW1wb3llZV9jb2RlIjoiRVBQLSIsImV4cCI6OTk5OTk5OTk5OTksImlhdCI6MTcwMDAwMDAwMH0.invalidsign"
+    token = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkhXVCJ9."
+        "eyJzdWIiOiI0ZDA0MGQwMC04MjM1LTQ4YjEtYWJjMC1kYjdhYWJjN2ZkZmIiLCJlbWFpbCI6"
+        "ImluYWN0aXZlLWF0cGlsLmxvY2FsIiwiZW1wb3llZV9jb2RlIjoiRVBQLSIsImV4cCI6"
+        "OTk5OTk5OTk5OTksImlhdCI6MTcwMDAwMDAwMH0.invalidsign"
+    )
     response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code in {401, 403}
 

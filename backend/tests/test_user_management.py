@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -15,7 +13,6 @@ from app.models.department import Department
 from app.models.plant import Plant
 from app.models.role import Role
 from app.models.user import User
-from app.models.user_role import UserRole
 from tests.auth_helpers import make_auth_headers
 
 
@@ -127,7 +124,11 @@ def test_user_management_update_user(client: TestClient, db_session: Session) ->
     )
     db_session.add(user)
     db_session.flush()
-    response = client.patch(f"/api/v1/users/{user.id}", json={"employee_code": "EMP-UPDATE-202", "email": "update202@patil.local"}, headers=headers)
+    response = client.patch(
+        f"/api/v1/users/{user.id}",
+        json={"employee_code": "EMP-UPDATE-202", "email": "update202@patil.local"},
+        headers=headers,
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["employee_code"] == "EMP-UPDATE-202"
@@ -154,7 +155,9 @@ def test_user_management_deactivate_reactivate(client: TestClient, db_session: S
     assert reactivate.json()["is_active"] is True
 
 
-def test_user_management_assign_roles_and_remove_role(client: TestClient, db_session: Session) -> None:
+def test_user_management_assign_roles_and_remove_role(
+    client: TestClient, db_session: Session
+) -> None:
     _, headers = _user_headers(db_session, "SUPER_ADMIN")
     user = User(
         employee_code="EMP-JOB-001",
@@ -165,17 +168,25 @@ def test_user_management_assign_roles_and_remove_role(client: TestClient, db_ses
     db_session.add(user)
     db_session.flush()
 
-    assign = client.post(f"/api/v1/users/{user.id}/roles", json={"role_codes": ["VIEWER", "SUPERVISOR"]}, headers=headers)
+    assign = client.post(
+        f"/api/v1/users/{user.id}/roles",
+        json={"role_codes": ["VIEWER", "SUPERVISOR"]},
+        headers=headers,
+    )
     assert assign.status_code == 200
     payload = assign.json()
     assert {item["code"] for item in payload["roles"]} == {"VIEWER", "SUPERVISOR"}
 
-    remove = client.delete(f"/api/v1/users/{user.id}/roles/{_role(db_session, 'VIEWER').id}", headers=headers)
+    remove = client.delete(
+        f"/api/v1/users/{user.id}/roles/{_role(db_session, 'VIEWER').id}", headers=headers
+    )
     assert remove.status_code == 200
     assert "VIEWER" not in {item["code"] for item in remove.json()["roles"]}
 
 
-def test_user_management_assign_plant_and_department(client: TestClient, db_session: Session) -> None:
+def test_user_management_assign_plant_and_department(
+    client: TestClient, db_session: Session
+) -> None:
     _, headers = _user_headers(db_session, "SUPER_ADMIN")
     user = User(
         employee_code="EMP-SCOPE-001",
@@ -188,11 +199,17 @@ def test_user_management_assign_plant_and_department(client: TestClient, db_sess
     plant = _plant(db_session, "PLN-SCOPE", "Plant Scope")
     department = _department(db_session, "HR", "Human Resources")
 
-    assign = client.patch(f"/api/v1/users/{user.id}/plant", json={"plant_id": str(plant.id)}, headers=headers)
+    assign = client.patch(
+        f"/api/v1/users/{user.id}/plant", json={"plant_id": str(plant.id)}, headers=headers
+    )
     assert assign.status_code == 200
     assert assign.json()["plant_id"] == str(plant.id)
 
-    assign_department = client.patch(f"/api/v1/users/{user.id}/department", json={"department_id": str(department.id)}, headers=headers)
+    assign_department = client.patch(
+        f"/api/v1/users/{user.id}/department",
+        json={"department_id": str(department.id)},
+        headers=headers,
+    )
     assert assign_department.status_code == 200
     assert assign_department.json()["department_id"] == str(department.id)
 
@@ -208,15 +225,21 @@ def test_user_management_duplicate_email_forbidden(client: TestClient, db_sessio
     db_session.add(user)
     db_session.flush()
 
-    response = client.post("/api/v1/users", json={
-        "employee_code": "EMP-DUP-NEW",
-        "email": "duplicate@example.com",
-        "password": "Password@123",
-    }, headers=headers)
+    response = client.post(
+        "/api/v1/users",
+        json={
+            "employee_code": "EMP-DUP-NEW",
+            "email": "duplicate@example.com",
+            "password": "Password@123",
+        },
+        headers=headers,
+    )
     assert response.status_code == 409
 
 
-def test_user_management_duplicate_employee_code_forbidden(client: TestClient, db_session: Session) -> None:
+def test_user_management_duplicate_employee_code_forbidden(
+    client: TestClient, db_session: Session
+) -> None:
     _, headers = _user_headers(db_session, "SUPER_ADMIN")
     user = User(
         employee_code="EMP-DUP-EMP",
@@ -227,29 +250,43 @@ def test_user_management_duplicate_employee_code_forbidden(client: TestClient, d
     db_session.add(user)
     db_session.flush()
 
-    response = client.post("/api/v1/users", json={
-        "employee_code": "EMP-DUP-EMP",
-        "email": "different@example.com",
-        "password": "Password@123",
-    }, headers=headers)
+    response = client.post(
+        "/api/v1/users",
+        json={
+            "employee_code": "EMP-DUP-EMP",
+            "email": "different@example.com",
+            "password": "Password@123",
+        },
+        headers=headers,
+    )
     assert response.status_code == 409
 
 
 def test_user_management_password_is_never_exposed(client: TestClient, db_session: Session) -> None:
     _, headers = _user_headers(db_session, "SUPER_ADMIN")
-    response = client.post("/api/v1/users", json={
-        "employee_code": "EMP-PW-001",
-        "email": "pw001@patil.local",
-        "password": "Password@123",
-    }, headers=headers)
+    response = client.post(
+        "/api/v1/users",
+        json={
+            "employee_code": "EMP-PW-001",
+            "email": "pw001@patil.local",
+            "password": "Password@123",
+        },
+        headers=headers,
+    )
     assert response.status_code == 201
     body = response.json()
     assert "password_hash" not in body
     assert "password" not in body
-    assert not verify_password("Password@123", body["password_hash"]) if "password_hash" in body else True
+    assert (
+        not verify_password("Password@123", body["password_hash"])
+        if "password_hash" in body
+        else True
+    )
 
 
-def test_user_management_inactive_user_login_rejected(client: TestClient, db_session: Session) -> None:
+def test_user_management_inactive_user_login_rejected(
+    client: TestClient, db_session: Session
+) -> None:
     user = User(
         employee_code="EMP-INACTIVE-001",
         email="inactive001@patil.local",
@@ -259,8 +296,11 @@ def test_user_management_inactive_user_login_rejected(client: TestClient, db_ses
     db_session.add(user)
     db_session.flush()
 
-    response = client.post("/api/v1/auth/login", json={
-        "email_or_employee_code": "inactive001@patil.local",
-        "password": "Password@123",
-    })
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email_or_employee_code": "inactive001@patil.local",
+            "password": "Password@123",
+        },
+    )
     assert response.status_code == 401

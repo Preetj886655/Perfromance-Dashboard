@@ -6,7 +6,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, dashboard, health, imports, manufacturing, masters, production_records, users
+from app.api.routes import (
+    auth,
+    dashboard,
+    health,
+    imports,
+    manufacturing,
+    masters,
+    production_records,
+    users,
+)
 from app.core.config import settings
 from app.db.bootstrap_admin import ensure_super_admin
 from app.db.session import get_session_factory
@@ -89,8 +98,8 @@ app.include_router(dashboard.router)
 def root() -> dict[str, str]:
     return {
         "service": settings.app_name,
-        "phase": "2-dashboard-api",
+        "phase": "production-analytics",
         "docs": "/docs",
         "health": "/api/v1/health",
-        "security": "development/internal — auth not implemented",
+        "security": "JWT Bearer authentication with RBAC enforced (development/internal)",
     }

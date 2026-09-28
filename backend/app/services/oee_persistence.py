@@ -56,7 +56,7 @@ NULL / Q1 behaviour
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TypeVar
 
 from sqlalchemy import select
@@ -172,12 +172,8 @@ def persist_production_record_metrics(
             "(flush the production record first)"
         )
 
-    dt_events = _resolve_downtime_events(
-        session, production_record, _as_list(downtime_events)
-    )
-    rj_events = _resolve_rejection_events(
-        session, production_record, _as_list(rejection_events)
-    )
+    dt_events = _resolve_downtime_events(session, production_record, _as_list(downtime_events))
+    rj_events = _resolve_rejection_events(session, production_record, _as_list(rejection_events))
 
     calculated = calculate_oee_metrics(
         start_at=production_record.start_at,
@@ -190,7 +186,7 @@ def persist_production_record_metrics(
         rejection_qtys=[e.qty for e in rj_events],
     )
 
-    computed_at = datetime.now(timezone.utc)
+    computed_at = datetime.now(UTC)
 
     existing = session.get(ProductionRecordMetrics, production_record.id)
     if existing is None:

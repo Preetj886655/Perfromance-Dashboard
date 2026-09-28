@@ -24,7 +24,10 @@ def health() -> dict:
     try:
         sheets_status = get_google_sheet_status()
     except Exception:
-        sheets_status = {"connectionStatus": "offline", "error": "Google Sheets status check failed"}
+        sheets_status = {
+            "connectionStatus": "offline",
+            "error": "Google Sheets status check failed",
+        }
 
     payload = {
         "status": "ok" if db_ok else "degraded",

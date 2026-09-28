@@ -29,9 +29,7 @@ class MachineType(Base):
     )
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -44,6 +42,4 @@ class MachineType(Base):
         onupdate=func.now(),
     )
 
-    machines: Mapped[list[Machine]] = relationship(
-        "Machine", back_populates="machine_type"
-    )
+    machines: Mapped[list[Machine]] = relationship("Machine", back_populates="machine_type")

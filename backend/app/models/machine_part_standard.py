@@ -78,9 +78,5 @@ class MachinePartStandard(Base):
         onupdate=func.now(),
     )
 
-    machine: Mapped[Machine] = relationship(
-        "Machine", back_populates="machine_part_standards"
-    )
-    part: Mapped[Part] = relationship(
-        "Part", back_populates="machine_part_standards"
-    )
+    machine: Mapped[Machine] = relationship("Machine", back_populates="machine_part_standards")
+    part: Mapped[Part] = relationship("Part", back_populates="machine_part_standards")

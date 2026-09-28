@@ -44,10 +44,7 @@ def validate_scope_type(value: str) -> str:
     """Return normalized scope_type or raise ValueError."""
     normalized = value.strip().lower()
     if normalized not in SCOPE_TYPES:
-        raise ValueError(
-            f"Invalid scope_type={value!r}; expected one of "
-            f"{sorted(SCOPE_TYPES)}"
-        )
+        raise ValueError(f"Invalid scope_type={value!r}; expected one of {sorted(SCOPE_TYPES)}")
     return normalized
 
 
@@ -55,10 +52,7 @@ def validate_period_type(value: str) -> str:
     """Return normalized period_type or raise ValueError."""
     normalized = value.strip().lower()
     if normalized not in PERIOD_TYPES:
-        raise ValueError(
-            f"Invalid period_type={value!r}; expected one of "
-            f"{sorted(PERIOD_TYPES)}"
-        )
+        raise ValueError(f"Invalid period_type={value!r}; expected one of {sorted(PERIOD_TYPES)}")
     return normalized
 
 
@@ -214,9 +208,5 @@ def list_plant_oee(
     if plant_id is not None:
         conditions.append(OeeSnapshot.scope_id == plant_id)
 
-    stmt = (
-        select(OeeSnapshot)
-        .where(*conditions)
-        .order_by(OeeSnapshot.scope_id.asc())
-    )
+    stmt = select(OeeSnapshot).where(*conditions).order_by(OeeSnapshot.scope_id.asc())
     return list(session.scalars(stmt).all())

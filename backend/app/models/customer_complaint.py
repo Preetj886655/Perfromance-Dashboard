@@ -44,9 +44,7 @@ class CustomerComplaint(Base):
 
     __tablename__ = "customer_complaints"
     __table_args__ = (
-        UniqueConstraint(
-            "complaint_code", name="uq_customer_complaints_complaint_code"
-        ),
+        UniqueConstraint("complaint_code", name="uq_customer_complaints_complaint_code"),
         CheckConstraint(
             "returned_qty IS NULL OR returned_qty >= 0",
             name="ck_customer_complaints_returned_qty_non_negative",
@@ -104,9 +102,7 @@ class CustomerComplaint(Base):
         onupdate=func.now(),
     )
 
-    part: Mapped[Part | None] = relationship(
-        "Part", back_populates="customer_complaints"
-    )
+    part: Mapped[Part | None] = relationship("Part", back_populates="customer_complaints")
     creator: Mapped[User | None] = relationship(
         "User",
         foreign_keys=[created_by],

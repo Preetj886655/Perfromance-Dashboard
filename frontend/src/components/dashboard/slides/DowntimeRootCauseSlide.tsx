@@ -9,7 +9,17 @@ import ReactECharts from "echarts-for-react";
 import type { DashboardAnalytics } from "./useDashboardAnalytics";
 import { KpiCard, KpiGrid } from "./KpiCard";
 import { ChartCard } from "./ChartCard";
-import { CHART_COLORS, abbreviateNumber, truncateLabel, xAxisCategoryStyle, yAxisStyle, gridStyle, axisLabelStyle } from "./chartTheme";
+import {
+  CHART_COLORS,
+  tooltipStyle,
+  truncateLabel,
+  xAxisCategoryStyle,
+  yAxisStyle,
+  gridStyle,
+  axisLabelStyle,
+  formatCompactQuantity,
+  formatExactQuantity,
+} from "./chartTheme";
 
 interface Props {
   analytics: DashboardAnalytics;
@@ -23,7 +33,16 @@ function buildBarOption(
 ) {
   return {
     grid: gridStyle({ left: 90, bottom: 50 }),
-    tooltip: { trigger: "axis", valueFormatter: (v: number) => `${v} min` },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        const p = params[0];
+        const val = Number(p.value);
+        return `<div style="font-weight: 600;">${p.axisValueLabel || p.name}</div><div>${title}: <strong>${formatCompactQuantity(val)} min</strong> <span style="font-size: 11px; color: #64748B;">(${formatExactQuantity(val)} min)</span></div>`;
+      },
+    },
     xAxis: {
       ...xAxisCategoryStyle,
       data: data.map((d) => truncateLabel(d.key, labelTruncate)),
@@ -58,7 +77,8 @@ export function DowntimeRootCauseSlide({ analytics }: Props) {
         <KpiCard
           label="Root Cause"
           value={rootCause ? truncateLabel(rootCause, 16) : "N/A"}
-          target={rootCause ? `${abbreviateNumber(rootCauseMinutes)} min` : ""}
+          exactValue={rootCause ? `${formatCompactQuantity(rootCauseMinutes)} min` : undefined}
+          target={rootCause ? `${formatExactQuantity(rootCauseMinutes)} min` : ""}
           status="Critical"
         />
         <KpiCard

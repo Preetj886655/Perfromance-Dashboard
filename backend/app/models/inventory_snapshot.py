@@ -88,9 +88,5 @@ class InventorySnapshot(Base):
         onupdate=func.now(),
     )
 
-    material: Mapped[Material] = relationship(
-        "Material", back_populates="inventory_snapshots"
-    )
-    plant: Mapped[Plant | None] = relationship(
-        "Plant", back_populates="inventory_snapshots"
-    )
+    material: Mapped[Material] = relationship("Material", back_populates="inventory_snapshots")
+    plant: Mapped[Plant | None] = relationship("Plant", back_populates="inventory_snapshots")

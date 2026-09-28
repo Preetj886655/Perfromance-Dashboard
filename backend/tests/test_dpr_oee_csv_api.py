@@ -104,9 +104,7 @@ def test_csv_api_1_successful_upload(client: TestClient, db_session: Session) ->
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     _seed_second_machine(db_session, masters)
 
-    content = _write_minimal_csv(
-        rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")]
-    )
+    content = _write_minimal_csv(rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")])
     response = _upload_csv(client, content=content, plant_id=plant.id)
     assert response.status_code == 200, response.text
     body = response.json()
@@ -188,9 +186,7 @@ def test_csv_api_3_missing_plant_id(client: TestClient, db_session: Session) -> 
 def test_csv_api_4_wrong_header_layout(client: TestClient, db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
-    content = _write_minimal_csv(
-        rows=[_row5_cells()], row3_overrides={"C": "Production Hour"}
-    )
+    content = _write_minimal_csv(rows=[_row5_cells()], row3_overrides={"C": "Production Hour"})
     response = _upload_csv(client, content=content, plant_id=plant.id)
     assert response.status_code == 200
     body = response.json()
@@ -228,9 +224,7 @@ def test_csv_api_6_import_rows_paginated(client: TestClient, db_session: Session
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     _seed_second_machine(db_session, masters)
-    content = _write_minimal_csv(
-        rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")]
-    )
+    content = _write_minimal_csv(rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")])
     upload = _upload_csv(client, content=content, plant_id=plant.id)
     import_id = upload.json()["import_job_id"]
 

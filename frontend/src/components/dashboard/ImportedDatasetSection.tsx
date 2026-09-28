@@ -16,6 +16,7 @@ import { calculateManufacturingAnalysis } from "../../data/calculations/manufact
 import { BUSINESS_LINES, BUSINESS_MATERIALS, BUSINESS_SHIFTS, normalizeLine, normalizeShift } from "../../data/normalization/lineShiftMaterial";
 import { BUSINESS_WORK_CENTERS } from "../../data/normalization/workCenterMapping";
 import type { FilterState } from "../../pages/ManufacturingDashboard";
+import { formatCompactQuantity, formatExactQuantity } from "../../utils/format";
 
 type Props = {
   records: DprRecord[];
@@ -34,7 +35,7 @@ type Props = {
 };
 
 function formatNumber(value: number): string {
-  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 function formatDate(isoDate: string): string {
@@ -226,11 +227,21 @@ export function ImportedDatasetSection({
         </div>
         <div className="imported-kpi-card">
           <span className="imported-kpi-card__label">Actual Production</span>
-          <strong className="imported-kpi-card__value">{formatNumber(productionKpis.totalProduction)}</strong>
+          <strong className="imported-kpi-card__value">
+            {formatCompactQuantity(productionKpis.totalProduction)}
+            <span style={{ display: "block", fontSize: "0.75rem", opacity: 0.75, fontWeight: "normal" }}>
+              ({formatExactQuantity(productionKpis.totalProduction)})
+            </span>
+          </strong>
         </div>
         <div className="imported-kpi-card">
           <span className="imported-kpi-card__label">Total Downtime</span>
-          <strong className="imported-kpi-card__value">{formatNumber(downtime.totalDowntimeMinutes)} min</strong>
+          <strong className="imported-kpi-card__value">
+            {formatCompactQuantity(downtime.totalDowntimeMinutes)} min
+            <span style={{ display: "block", fontSize: "0.75rem", opacity: 0.75, fontWeight: "normal" }}>
+              ({formatExactQuantity(downtime.totalDowntimeMinutes)} min)
+            </span>
+          </strong>
         </div>
         <div className="imported-kpi-card">
           <span className="imported-kpi-card__label">Rejection Rate</span>
@@ -242,7 +253,12 @@ export function ImportedDatasetSection({
         </div>
         <div className="imported-kpi-card">
           <span className="imported-kpi-card__label">Production Loss</span>
-          <strong className="imported-kpi-card__value">{formatNumber(totalProductionLoss)}</strong>
+          <strong className="imported-kpi-card__value">
+            {formatCompactQuantity(totalProductionLoss)}
+            <span style={{ display: "block", fontSize: "0.75rem", opacity: 0.75, fontWeight: "normal" }}>
+              ({formatExactQuantity(totalProductionLoss)})
+            </span>
+          </strong>
         </div>
       </div>
 

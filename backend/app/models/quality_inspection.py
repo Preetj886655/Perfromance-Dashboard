@@ -122,9 +122,7 @@ class QualityInspection(Base):
     )
 
     part: Mapped[Part] = relationship("Part", back_populates="quality_inspections")
-    machine: Mapped[Machine | None] = relationship(
-        "Machine", back_populates="quality_inspections"
-    )
+    machine: Mapped[Machine | None] = relationship("Machine", back_populates="quality_inspections")
     production_record: Mapped[ProductionRecord | None] = relationship(
         "ProductionRecord", back_populates="quality_inspections"
     )

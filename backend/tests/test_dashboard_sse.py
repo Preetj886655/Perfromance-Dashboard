@@ -21,7 +21,7 @@ def test_dashboard_stream_emits_oee_updated_event() -> None:
     assert queue
     raw = queue.popleft()
     assert raw.startswith("event: oee_updated")
-    assert "\"type\":\"oee_updated\"" in raw
+    assert '"type":"oee_updated"' in raw
     payload = json.loads(raw.split("data: ", 1)[1].split("\n\n", 1)[0])
     assert payload["type"] == "oee_updated"
     assert payload["scope_type"] == "plant"

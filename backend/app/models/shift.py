@@ -34,9 +34,7 @@ class Shift(Base):
     """Named plant shift with start/end times (Excel col C)."""
 
     __tablename__ = "shifts"
-    __table_args__ = (
-        UniqueConstraint("plant_id", "code", name="uq_shifts_plant_id_code"),
-    )
+    __table_args__ = (UniqueConstraint("plant_id", "code", name="uq_shifts_plant_id_code"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

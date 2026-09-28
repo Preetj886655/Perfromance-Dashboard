@@ -89,7 +89,7 @@ Animation Performance:   ✅ SMOOTH
 ### Support Files Created
 - ✅ `backend/create_test_user.py`
   - Test user creation utility (for dashboard verification)
-  - Creates user: alice@patil.local / Secret123!
+  - Creates user: alice@patil.local (Test account credential: REDACTED)
 
 ### Files NOT Modified (All Preserved)
 - ✅ ManufacturingDashboard.tsx (1,580 lines - untouched, all functionality intact)
@@ -399,7 +399,7 @@ Memory usage unchanged:  ✅
 ## Test User for Dashboard Verification
 
 **Email:** alice@patil.local  
-**Password:** Secret123!  
+**Password:** [REDACTED]  
 **Employee Code:** EMP-1001  
 **Role:** SUPER_ADMIN  
 
@@ -412,7 +412,7 @@ python create_test_user.py
 
 **Dashboard Access:**
 1. Navigate to https://patilgroup-perfromance-dashboard.vercel.app/
-2. Login with alice@patil.local / Secret123!
+2. Login with alice@patil.local (Test account credential: REDACTED)
 3. Verify all 9 dashboard slides display with new light theme
 4. Test responsive design by resizing browser
 5. Verify all KPI cards and charts render correctly

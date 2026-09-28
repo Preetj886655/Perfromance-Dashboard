@@ -77,9 +77,7 @@ def test_worker_1_valid_import_job_execution(db_session: Session) -> None:
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     _seed_second_machine(db_session, masters)
-    content = _xlsx_bytes(
-        rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")]
-    )
+    content = _xlsx_bytes(rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")])
     job = _prepare_job(db_session, plant.id)
     assert job.status == STATUS_PENDING
 
@@ -229,9 +227,7 @@ def test_worker_8_unexpected_exception_safe(db_session: Session) -> None:
     with patch.object(
         import_worker_mod,
         "ingest_dpr_oee_workbook",
-        side_effect=RuntimeError(
-            "boom postgresql+psycopg://user:secret@host/db password=leak"
-        ),
+        side_effect=RuntimeError("boom postgresql+psycopg://user:secret@host/db password=leak"),
     ):
         result = run_import_job(db_session, job.id, file_bytes=content)
 
@@ -259,7 +255,7 @@ def test_worker_9_status_transitions(db_session: Session) -> None:
     real_ingest = ingest_dpr_oee_workbook
 
     def _wrap(*args, **kwargs):
-        j = kwargs.get("import_job") or args[0]
+        _ = kwargs.get("import_job") or args[0]
         # During ingest call the worker has already set validating
         current = db_session.get(ImportJob, job.id)
         assert current is not None
@@ -355,6 +351,4 @@ def test_worker_missing_bytes_when_file_uri_null(db_session: Session) -> None:
     assert job.file_uri is None
     with pytest.raises(ImportJobMissingBytesError) as exc_info:
         run_import_job(db_session, job.id)
-    assert "file_bytes" in str(exc_info.value).lower() or "bytes" in str(
-        exc_info.value
-    ).lower()
+    assert "file_bytes" in str(exc_info.value).lower() or "bytes" in str(exc_info.value).lower()

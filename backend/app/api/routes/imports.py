@@ -14,7 +14,6 @@ from typing import Annotated
 from uuid import UUID
 
 import openpyxl
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -41,7 +40,10 @@ from app.models.data_source import DataSource
 from app.models.import_job import ImportJob
 from app.models.import_job_row import ImportJobRow
 from app.models.production_record import ProductionRecord
-from app.services.dpr_oee_ingestion import ingest_dpr_oee_workbook
+from app.services.dpr_oee_ingestion import (
+    ingest_dpr_oee_csv,
+    ingest_dpr_oee_workbook,
+)
 from app.services.event_queue import queue_oee_updated_event
 from app.services.flexible_workbook_ingestion import (
     ingest_flexible_csv,
@@ -95,7 +97,9 @@ def _normalise_source_type(source_type: str | None) -> str:
     if value not in {"excel", "csv", "form", "sheets", "manual", "api"}:
         raise HTTPException(
             status_code=400,
-            detail=_safe_detail("source_type must be one of: excel, csv, form, sheets, manual, api"),
+            detail=_safe_detail(
+                "source_type must be one of: excel, csv, form, sheets, manual, api"
+            ),
         )
     return value
 
@@ -156,7 +160,9 @@ def create_data_source(
     dependencies=[Depends(require_permission("imports", "READ"))],
     summary="List saved column mappings",
 )
-def list_column_mapping_templates(db: Session = Depends(get_db)) -> ColumnMappingTemplateListResponse:
+def list_column_mapping_templates(
+    db: Session = Depends(get_db),
+) -> ColumnMappingTemplateListResponse:
     rows = db.scalars(select(ColumnMappingTemplate).order_by(ColumnMappingTemplate.name)).all()
     return ColumnMappingTemplateListResponse(
         items=[ColumnMappingTemplateResponse.model_validate(row) for row in rows],
@@ -177,7 +183,9 @@ def create_column_mapping_template(
 ) -> ColumnMappingTemplateResponse:
     name = (payload.name or "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail=_safe_detail("Mapping template name is required"))
+        raise HTTPException(
+            status_code=400, detail=_safe_detail("Mapping template name is required")
+        )
     source_type = _normalise_source_type(payload.source_type)
 
     existing = db.scalar(
@@ -221,8 +229,13 @@ async def preview_import_file(
         raise HTTPException(status_code=400, detail=_safe_detail("File is required"))
 
     lower = filename.lower()
-    if source_type in {"csv", "excel"} and not (lower.endswith(".csv") or lower.endswith(".xlsx") or lower.endswith(".xlsm")):
-        raise HTTPException(status_code=400, detail=_safe_detail("Unsupported file type for the selected source_type"))
+    if source_type in {"csv", "excel"} and not (
+        lower.endswith(".csv") or lower.endswith(".xlsx") or lower.endswith(".xlsm")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_detail("Unsupported file type for the selected source_type"),
+        )
 
     contents = await file.read()
     if not contents:
@@ -250,7 +263,9 @@ async def preview_import_file(
                 preview_limit=25,
             )
 
-        workbook = openpyxl.load_workbook(filename=io.BytesIO(contents), read_only=True, data_only=True)
+        workbook = openpyxl.load_workbook(
+            filename=io.BytesIO(contents), read_only=True, data_only=True
+        )
         ws = workbook.active
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
@@ -269,9 +284,13 @@ async def preview_import_file(
             preview_limit=25,
         )
     except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail=_safe_detail("Unable to decode the uploaded file")) from exc
+        raise HTTPException(
+            status_code=400, detail=_safe_detail("Unable to decode the uploaded file")
+        ) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=_safe_detail(f"Unable to preview file: {exc}")) from exc
+        raise HTTPException(
+            status_code=400, detail=_safe_detail(f"Unable to preview file: {exc}")
+        ) from exc
 
 
 _PRODUCTION_MAPPING_REQUIRED_FIELDS = [
@@ -322,7 +341,9 @@ def validate_import_mapping(
         mapped_fields[field_name] = value
 
     if source_type in {"csv", "excel"} and not headers:
-        raise HTTPException(status_code=400, detail=_safe_detail("Headers are required to validate a mapping"))
+        raise HTTPException(
+            status_code=400, detail=_safe_detail("Headers are required to validate a mapping")
+        )
 
     if not mapped_fields:
         warnings.append("No required production fields were mapped to the uploaded headers.")
@@ -344,7 +365,8 @@ def validate_import_mapping(
     summary="Upload DPR_OEE Excel workbook (LEGACY — use /imports/flexible)",
     description=(
         "LEGACY ENDPOINT — Use POST /api/v1/imports/flexible for new imports. "
-        "This endpoint is maintained for backward compatibility with rigid DPR_OEE template format. "
+        "This endpoint is maintained for backward compatibility with rigid "
+        "DPR_OEE template format. "
         "Development/internal endpoint (authentication not yet implemented). "
         "Multipart: Excel file + plant_id (+ optional uploaded_by). "
         "Calls ingest_dpr_oee_workbook and triggers OEE rollup. "
@@ -488,6 +510,142 @@ async def upload_dpr_oee(
 
 
 @router.post(
+    "/imports/dpr-oee/csv",
+    response_model=DprOeeImportResponse,
+    dependencies=[Depends(require_permission("imports", "CREATE"))],
+    summary="Upload DPR_OEE CSV file",
+    description=(
+        "Upload a single-sheet CSV file matching the canonical DPR_OEE schema. "
+        "Multipart: CSV file + plant_id (+ optional uploaded_by). "
+        "Calls ingest_dpr_oee_csv and triggers OEE rollup."
+    ),
+    responses={
+        400: {"description": "Invalid upload or plant_id"},
+        404: {"description": "Plant not found"},
+        422: {"description": "Form / file validation error"},
+        500: {"description": "Unexpected server error"},
+    },
+)
+async def upload_dpr_oee_csv(
+    file: Annotated[UploadFile, File(description="DPR_OEE CSV file (.csv)")],
+    plant_id: Annotated[UUID, Form(description="Target plant UUID (required)")],
+    uploaded_by: Annotated[
+        UUID | None,
+        Form(description="Optional uploader user UUID"),
+    ] = None,
+    db: Session = Depends(get_db),
+) -> DprOeeImportResponse:
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_detail("CSV file is required"),
+        )
+    lower = filename.lower()
+    if not lower.endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_detail("File must be a CSV file (.csv)"),
+        )
+
+    try:
+        content = await file.read()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_detail("Failed to read uploaded file"),
+        ) from None
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_detail("Uploaded file is empty"),
+        )
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_detail("Uploaded file exceeds maximum allowed size"),
+        )
+
+    try:
+        result = ingest_dpr_oee_csv(
+            db,
+            content,
+            plant_id=plant_id,
+            uploaded_by=uploaded_by,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise HTTPException(
+                status_code=404,
+                detail=_safe_detail("Plant not found"),
+            ) from None
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_detail("Invalid import request"),
+        ) from None
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500,
+            detail=_safe_detail("Unexpected error during import"),
+        ) from None
+
+    if result.status == "committed" and result.success_count > 0:
+        try:
+            production_date: date | None = None
+            if result.production_record_ids:
+                rec = db.get(ProductionRecord, result.production_record_ids[0])
+                if rec is not None:
+                    production_date = rec.production_date
+
+            if production_date is not None:
+                plant_snap = rollup_plant_day(db, plant_id, production_date)
+                db.flush()
+
+                if plant_snap is not None:
+                    queue_oee_updated_event(
+                        db,
+                        scope_type=SCOPE_PLANT,
+                        scope_id=plant_id,
+                        period_type=PERIOD_DAY,
+                        period_start=production_date,
+                    )
+
+                machines = (
+                    db.query(ProductionRecord.machine_id)
+                    .distinct()
+                    .where(ProductionRecord.id.in_(result.production_record_ids))
+                ).all()
+
+                for machine_id in machines:
+                    if machine_id is not None:
+                        machine_snap = rollup_machine_day(db, machine_id, production_date)
+                        db.flush()
+                        if machine_snap is not None:
+                            queue_oee_updated_event(
+                                db,
+                                scope_type=SCOPE_MACHINE,
+                                scope_id=machine_id,
+                                period_type=PERIOD_DAY,
+                                period_start=production_date,
+                            )
+        except Exception as exc:
+            print(f"Warning: Rollup or event queue failed after import: {exc}")
+
+    return DprOeeImportResponse(
+        import_job_id=result.import_job_id,
+        status=result.status,
+        total_rows=result.row_count,
+        success_count=result.success_count,
+        error_count=result.error_count,
+        message=_import_message(result.status, result.error_summary),
+    )
+
+
+@router.post(
     "/imports/flexible",
     response_model=DprOeeImportResponse,
     dependencies=[Depends(require_permission("imports", "CREATE"))],
@@ -548,7 +706,7 @@ async def upload_flexible(
     if len(content) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=400,
-            detail=_safe_detail(f"File exceeds {_MAX_UPLOAD_BYTES / (1024*1024):.0f} MiB limit"),
+            detail=_safe_detail(f"File exceeds {_MAX_UPLOAD_BYTES / (1024 * 1024):.0f} MiB limit"),
         )
 
     try:
@@ -566,6 +724,7 @@ async def upload_flexible(
             # Excel — write to temp file and ingest
             import tempfile
             from pathlib import Path
+
             with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
                 tmp.write(content)
                 tmp_path = Path(tmp.name)

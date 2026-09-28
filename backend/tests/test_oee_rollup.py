@@ -10,7 +10,7 @@ must remain green; Alembic head stays 015 (no schema changes).
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -270,7 +270,7 @@ def _persist_row(
     machine: Machine | None = None,
     start_hour: int = 8,
 ) -> ProductionRecord:
-    start = datetime(day.year, day.month, day.day, start_hour, 30, tzinfo=timezone.utc)
+    start = datetime(day.year, day.month, day.day, start_hour, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     # Distinct part per record when same machine/shift/date/start would collide
     part = Part(code=_uid("PT"), name="Rollup Part")
@@ -464,9 +464,7 @@ def test_8_machine_week_rollup(db_session: Session) -> None:
 
     week_start = iso_week_period_start(wed)
     assert week_start == mon
-    snap = rollup_for_period(
-        db_session, "machine", machine.id, "week", week_start
-    )
+    snap = rollup_for_period(db_session, "machine", machine.id, "week", week_start)
     db_session.flush()
     assert snap is not None
     assert snap.period_type == "week"
@@ -483,9 +481,7 @@ def test_9_machine_month_rollup(db_session: Session) -> None:
     # Outside month — must not be included
     _persist_row(db_session, masters, ROW5, day=date(2024, 4, 1))
 
-    snap = rollup_for_period(
-        db_session, "machine", machine.id, "month", date(2024, 3, 1)
-    )
+    snap = rollup_for_period(db_session, "machine", machine.id, "month", date(2024, 3, 1))
     db_session.flush()
     assert snap is not None
     assert snap.period_start == date(2024, 3, 1)
@@ -531,10 +527,7 @@ def test_11_12_line_mapped_only_excludes_unmapped(db_session: Session) -> None:
     assert line_snap.sum_produced_qty == Decimal("1200")
     assert line_snap.sum_run_time_min == Decimal("640")
     assert line_snap.oee == pytest.approx(
-        Decimal("640")
-        / Decimal("660")
-        * Decimal("0.9375")
-        * Decimal("0.9875"),
+        Decimal("640") / Decimal("660") * Decimal("0.9375") * Decimal("0.9875"),
         abs=Decimal("1e-8"),
     )
 
@@ -555,7 +548,7 @@ def test_13_null_incomplete_row_excluded(db_session: Session) -> None:
     session = db_session
     session.add(part)
     session.flush()
-    start = datetime(2024, 6, 1, 10, 0, tzinfo=timezone.utc)
+    start = datetime(2024, 6, 1, 10, 0, tzinfo=UTC)
     bad = ProductionRecord(
         plant_id=masters["plant"].id,  # type: ignore[union-attr]
         machine_id=machine.id,
@@ -589,7 +582,7 @@ def test_13_null_incomplete_row_excluded(db_session: Session) -> None:
             quality=None,
             oee=None,
             formula_version=FORMULA_VERSION,
-            computed_at=datetime.now(timezone.utc),
+            computed_at=datetime.now(UTC),
         )
     )
     session.flush()
@@ -612,8 +605,8 @@ def test_14_q1_overnight_not_repaired(db_session: Session) -> None:
     db_session.add(part)
     db_session.flush()
     # Same calendar date but stop before start (Q1 TBC — calculator leaves NULL)
-    start = datetime(2024, 7, 1, 22, 0, tzinfo=timezone.utc)
-    stop = datetime(2024, 7, 1, 6, 0, tzinfo=timezone.utc)
+    start = datetime(2024, 7, 1, 22, 0, tzinfo=UTC)
+    stop = datetime(2024, 7, 1, 6, 0, tzinfo=UTC)
     assert stop < start
     overnight = _make_production_record(
         db_session,
@@ -655,9 +648,7 @@ def test_15_formula_version_isolation(db_session: Session) -> None:
     m6.formula_version = 99
     db_session.flush()
 
-    snap_v1 = rollup_for_period(
-        db_session, "machine", machine.id, "day", day, formula_version=1
-    )
+    snap_v1 = rollup_for_period(db_session, "machine", machine.id, "day", day, formula_version=1)
     db_session.flush()
     assert snap_v1 is not None
     assert snap_v1.sum_produced_qty == Decimal("1200")
@@ -665,9 +656,7 @@ def test_15_formula_version_isolation(db_session: Session) -> None:
 
     # formula_version is a source filter — not part of snapshot uniqueness.
     # A rollup pinned to v99 only sees ROW6 and upserts the same key.
-    snap_v99 = rollup_for_period(
-        db_session, "machine", machine.id, "day", day, formula_version=99
-    )
+    snap_v99 = rollup_for_period(db_session, "machine", machine.id, "day", day, formula_version=99)
     db_session.flush()
     assert snap_v99 is not None
     assert snap_v99.id == snap_v1.id

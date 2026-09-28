@@ -87,12 +87,8 @@ class PmCompletion(Base):
         onupdate=func.now(),
     )
 
-    pm_schedule: Mapped[PmSchedule] = relationship(
-        "PmSchedule", back_populates="completions"
-    )
-    machine: Mapped[Machine] = relationship(
-        "Machine", back_populates="pm_completions"
-    )
+    pm_schedule: Mapped[PmSchedule] = relationship("PmSchedule", back_populates="completions")
+    machine: Mapped[Machine] = relationship("Machine", back_populates="pm_completions")
     completed_by_user: Mapped[User | None] = relationship(
         "User",
         foreign_keys=[completed_by],

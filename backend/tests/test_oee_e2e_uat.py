@@ -127,9 +127,7 @@ def _ingest_distinct_rows56(
         _write_minimal_workbook(path, rows=rows)
         result = ingest_dpr_oee_workbook(session, path, plant_id=plant.id)
     else:
-        result = ingest_dpr_oee_workbook(
-            session, _xlsx_bytes(rows=rows), plant_id=plant.id
-        )
+        result = ingest_dpr_oee_workbook(session, _xlsx_bytes(rows=rows), plant_id=plant.id)
     return masters, result
 
 
@@ -137,9 +135,7 @@ def _records_by_qty(
     session: Session, record_ids: list[uuid.UUID]
 ) -> dict[Decimal, ProductionRecord]:
     records = list(
-        session.scalars(
-            select(ProductionRecord).where(ProductionRecord.id.in_(record_ids))
-        ).all()
+        session.scalars(select(ProductionRecord).where(ProductionRecord.id.in_(record_ids))).all()
     )
     return {r.produced_qty: r for r in records}
 
@@ -162,12 +158,8 @@ def _assert_dashboard_matches_snapshot(
     assert Decimal(str(body["availability"])) == pytest.approx(
         snap.availability, abs=Decimal("1e-8")
     )
-    assert Decimal(str(body["performance"])) == pytest.approx(
-        snap.performance, abs=Decimal("1e-8")
-    )
-    assert Decimal(str(body["quality"])) == pytest.approx(
-        snap.quality, abs=Decimal("1e-8")
-    )
+    assert Decimal(str(body["performance"])) == pytest.approx(snap.performance, abs=Decimal("1e-8"))
+    assert Decimal(str(body["quality"])) == pytest.approx(snap.quality, abs=Decimal("1e-8"))
     assert Decimal(str(body["oee"])) == pytest.approx(snap.oee, abs=Decimal("1e-8"))
     assert body["machine_utilisation"] is None
 
@@ -243,9 +235,7 @@ def test_e2e_1_ingest_metrics_rollup_dashboard(
     assert snap_m1.oee == pytest.approx(m5.oee, abs=Decimal("1e-8"))
 
     m002 = db_session.scalar(
-        select(Machine).where(
-            Machine.plant_id == plant.id, Machine.code == "M002"
-        )
+        select(Machine).where(Machine.plant_id == plant.id, Machine.code == "M002")
     )
     assert m002 is not None
     snap_m2 = rollup_machine_day(db_session, m002.id, PROD_DATE)
@@ -302,6 +292,7 @@ def test_e2e_1_ingest_metrics_rollup_dashboard(
     assert str(plant.id) in plant_ids
 
 
+@pytest.mark.skipif(not REAL_XLSX.exists(), reason="PRIL_DPR_OEE sample file not in repository")
 def test_e2e_2_real_xlsx_last_wins_documented(db_session: Session) -> None:
     """Real sample rows 5–6 share business key → one record (row 6 last-wins).
 
@@ -336,16 +327,12 @@ def test_e2e_2_real_xlsx_last_wins_documented(db_session: Session) -> None:
     assert snap.oee != pytest.approx(COMBINED_OEE_APPROX, abs=Decimal("1e-4"))
 
 
-def test_e2e_3_import_worker_bytes_path(
-    client: TestClient, db_session: Session
-) -> None:
+def test_e2e_3_import_worker_bytes_path(client: TestClient, db_session: Session) -> None:
     """Same E2E via prepare + run_import_job(file_bytes) instead of direct ingest."""
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
     _seed_second_machine(db_session, masters)
-    content = _xlsx_bytes(
-        rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")]
-    )
+    content = _xlsx_bytes(rows=[_row5_cells(machine="M001"), _row6_cells(machine="M002")])
     job = prepare_dpr_oee_import_job(db_session, plant_id=plant.id)
     worker = run_import_job(db_session, job.id, file_bytes=content)
     db_session.flush()
@@ -371,9 +358,7 @@ def test_e2e_3_import_worker_bytes_path(
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_4_dashboard_empty_and_null_states(
-    client: TestClient, db_session: Session
-) -> None:
+def test_e2e_4_dashboard_empty_and_null_states(client: TestClient, db_session: Session) -> None:
     """No snapshot → 404; empty trend → []; MU always null when present."""
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
@@ -457,12 +442,8 @@ def test_e2e_5_idempotent_reingest(db_session: Session, tmp_path: Path) -> None:
         == count_pr
         == 2
     )
-    assert (
-        db_session.scalar(select(func.count()).select_from(DowntimeEvent)) == count_dt
-    )
-    assert (
-        db_session.scalar(select(func.count()).select_from(RejectionEvent)) == count_rj
-    )
+    assert db_session.scalar(select(func.count()).select_from(DowntimeEvent)) == count_dt
+    assert db_session.scalar(select(func.count()).select_from(RejectionEvent)) == count_rj
 
     # Rollup still ~84.48% after re-ingest
     plant_snap = rollup_plant_day(db_session, plant.id, PROD_DATE)
@@ -476,9 +457,7 @@ def test_e2e_5_idempotent_reingest(db_session: Session, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_6_q1_incomplete_excluded_from_rollup(
-    db_session: Session, tmp_path: Path
-) -> None:
+def test_e2e_6_q1_incomplete_excluded_from_rollup(db_session: Session, tmp_path: Path) -> None:
     """stop < start → NULL time metrics; rollup excludes without inventing +24h."""
     masters = _seed_masters_for_real_xlsx(db_session)
     plant: Plant = masters["plant"]  # type: ignore[assignment]
@@ -595,9 +574,7 @@ def test_e2e_7_zero_produced_null_ratios_still_roll_components(
     zero_rec = next(
         r
         for r in db_session.scalars(
-            select(ProductionRecord).where(
-                ProductionRecord.id.in_(result.production_record_ids)
-            )
+            select(ProductionRecord).where(ProductionRecord.id.in_(result.production_record_ids))
         )
         if r.produced_qty == Decimal("0")
     )
@@ -646,6 +623,7 @@ def test_e2e_8_row_metric_excel_parity_anchors(db_session: Session) -> None:
     assert m5.oee == pytest.approx(
         m5.availability * m5.performance * m5.quality, abs=Decimal("1e-7")
     )
+
 
 # ---------------------------------------------------------------------------
 # Leftover gate (separate connection sees committed DB only)

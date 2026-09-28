@@ -48,6 +48,10 @@ export const WORK_CENTER_MAPPINGS: Record<string, WorkCenterMapping> = {
   "MPI 1": { workCenter: "MPI" },
   "MPI  1": { workCenter: "MPI" },
   "MPI 2": { workCenter: "MPI" },
+
+  // Tempering machines map to Tempering work center
+  "Tampering Furnace": { workCenter: "Tempering" },
+  "Tampering": { workCenter: "Tempering" },
 };
 
 /**

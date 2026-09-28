@@ -22,6 +22,22 @@ import {
   calculateManufacturingAnalysis,
   type ManufacturingAnalysis,
 } from "../../../data/calculations/manufacturingAnalysis";
+import {
+  type PeriodWindow,
+  type PeriodComparison,
+  type TrendDataPoint,
+  comparePeriods,
+  buildGranularTrendSeries,
+  type PeriodTargetActualPoint,
+  buildMonthlyTargetActualSeries,
+  buildWeeklyTargetActualSeries,
+  buildQuarterlyTargetActualSeries,
+  buildYearlyTargetActualSeries,
+} from "../../../data/calculations/periodEngine";
+import {
+  calculateHierarchyAnalysis,
+  type HierarchyAnalysis,
+} from "../../../data/calculations/hierarchyEngine";
 import type { DprRecord } from "../../../data/normalization/normalizeDprData";
 
 /** Aggregated per-group statistics used by performance / work-center slides. */
@@ -63,6 +79,15 @@ export type DashboardAnalytics = {
   totalProductionLoss: number;
   totalRecords: number;
   dateRange: { start: string; end: string };
+  periodWindow?: PeriodWindow;
+  previousRecordsCount: number;
+  periodComparison: PeriodComparison;
+  granularTrendSeries: TrendDataPoint[];
+  monthlyTargetActual: PeriodTargetActualPoint[];
+  weeklyTargetActual: PeriodTargetActualPoint[];
+  quarterlyTargetActual: PeriodTargetActualPoint[];
+  yearlyTargetActual: PeriodTargetActualPoint[];
+  hierarchyAnalysis: HierarchyAnalysis;
 };
 
 /** Row-level production target (target/hr × hours), mirroring productionKpis logic. */
@@ -189,21 +214,61 @@ function buildLossDailySeries(records: DprRecord[]) {
     .map(([date, loss]) => ({ date, loss }));
 }
 
-export function useDashboardAnalytics(records: DprRecord[]): DashboardAnalytics {
+export function useDashboardAnalytics(
+  records: DprRecord[],
+  previousRecords: DprRecord[] = [],
+  periodWindow?: PeriodWindow
+): DashboardAnalytics {
   const productionKpis = useMemo(() => calculateProductionKpis(records), [records]);
   const downtime = useMemo(() => calculateDowntimeAnalysis(records), [records]);
   const quality = useMemo(() => calculateQualityAnalysis(records), [records]);
   const oeeSummary = useMemo(() => calculateOeeSummary(records), [records]);
   const manufacturing = useMemo(() => calculateManufacturingAnalysis(records), [records]);
-  const dailySeries = useMemo(() => buildDailySeries(records), [records]);
-  const downtimeDailySeries = useMemo(() => buildDowntimeDailySeries(records), [records]);
+
+  const trendGranularity = periodWindow?.trendGranularity ?? "monthly";
+  const granularTrendSeries = useMemo(
+    () => buildGranularTrendSeries(records, trendGranularity),
+    [records, trendGranularity]
+  );
+
+  const dailySeries = useMemo(() => {
+    if (granularTrendSeries.length > 0) {
+      return granularTrendSeries.map((d) => ({
+        date: d.label,
+        actual: d.production,
+        target: d.target,
+      }));
+    }
+    return buildDailySeries(records);
+  }, [records, granularTrendSeries]);
+
+  const downtimeDailySeries = useMemo(() => {
+    if (granularTrendSeries.length > 0) {
+      return granularTrendSeries.map((d) => ({
+        date: d.label,
+        minutes: d.downtime,
+      }));
+    }
+    return buildDowntimeDailySeries(records);
+  }, [records, granularTrendSeries]);
+
+  const lossDailySeries = useMemo(() => {
+    if (granularTrendSeries.length > 0) {
+      return granularTrendSeries.map((d) => ({
+        date: d.label,
+        loss: d.productionLoss,
+      }));
+    }
+    return buildLossDailySeries(records);
+  }, [records, granularTrendSeries]);
+
   const byLine = useMemo(() => buildGroupStats(records, (row) => row.lineName), [records]);
   const byShift = useMemo(() => buildGroupStats(records, (row) => row.shift), [records]);
   const byStage = useMemo(() => buildGroupStats(records, (row) => row.rawStage), [records]);
   const byMaterial = useMemo(() => buildGroupStats(records, (row) => row.material), [records]);
   const byWorkCenter = useMemo(() => buildGroupStats(records, (row) => row.workCenter), [records]);
   const downtimeByWorkCenter = useMemo(() => buildDowntimePoints(records, (row) => row.workCenter), [records]);
-    const downtimeByStage = useMemo(() => buildDowntimePoints(records, (row) => row.rawStage), [records]);
+  const downtimeByStage = useMemo(() => buildDowntimePoints(records, (row) => row.rawStage), [records]);
   const downtimeByLine = useMemo(() => buildDowntimePoints(records, (row) => row.lineName), [records]);
   const downtimeByShift = useMemo(() => buildDowntimePoints(records, (row) => row.shift), [records]);
   const lossByWorkCenter = useMemo(() => buildProductionLossPoints(records, (row) => row.workCenter), [records]);
@@ -212,13 +277,22 @@ export function useDashboardAnalytics(records: DprRecord[]): DashboardAnalytics 
   const lossByShift = useMemo(() => buildProductionLossPoints(records, (row) => row.shift), [records]);
   const lossByMachine = useMemo(() => buildProductionLossPoints(records, (row) => row.machineName || row.machineNo), [records]);
   const lossByMaterial = useMemo(() => buildProductionLossPoints(records, (row) => row.material), [records]);
-  const lossDailySeries = useMemo(() => buildLossDailySeries(records), [records]);
   const totalProductionLoss = useMemo(
     () =>
       records.reduce(
         (sum, row) => (typeof row.productionLoss === "number" && Number.isFinite(row.productionLoss) ? sum + row.productionLoss : sum),
         0
       ),
+    [records]
+  );
+
+  const periodComparison = useMemo(
+    () => comparePeriods(records, previousRecords),
+    [records, previousRecords]
+  );
+
+  const hierarchyAnalysis = useMemo(
+    () => calculateHierarchyAnalysis(records),
     [records]
   );
 
@@ -233,8 +307,27 @@ export function useDashboardAnalytics(records: DprRecord[]): DashboardAnalytics 
     return { start, end };
   }, [records]);
 
+  // Target vs Actual period series — one per aggregation grain, all from the
+  // same filtered record set so the four charts stay perfectly consistent.
+  const monthlyTargetActual = useMemo(
+    () => buildMonthlyTargetActualSeries(records, dateRange),
+    [records, dateRange]
+  );
+  const weeklyTargetActual = useMemo(
+    () => buildWeeklyTargetActualSeries(records, dateRange),
+    [records, dateRange]
+  );
+  const quarterlyTargetActual = useMemo(
+    () => buildQuarterlyTargetActualSeries(records, dateRange),
+    [records, dateRange]
+  );
+  const yearlyTargetActual = useMemo(
+    () => buildYearlyTargetActualSeries(records, dateRange),
+    [records, dateRange]
+  );
+
   // Memoize the aggregate object so slide elements are not rebuilt on every render.
-    return useMemo(
+  return useMemo(
     () => ({
       productionKpis,
       downtime,
@@ -263,7 +356,52 @@ export function useDashboardAnalytics(records: DprRecord[]): DashboardAnalytics 
       totalProductionLoss,
       totalRecords: records.length,
       dateRange,
+      periodWindow,
+      previousRecordsCount: previousRecords.length,
+      periodComparison,
+      granularTrendSeries,
+      monthlyTargetActual,
+      weeklyTargetActual,
+      quarterlyTargetActual,
+      yearlyTargetActual,
+      hierarchyAnalysis,
     }),
-    [productionKpis, downtime, quality, oeeSummary, manufacturing, dailySeries, downtimeDailySeries, byLine, byShift, byStage, byMaterial, byWorkCenter, downtimeByWorkCenter, downtimeByStage, downtimeByLine, downtimeByShift, lossByWorkCenter, lossByStage, lossByLine, lossByShift, lossByMachine, lossByMaterial, lossDailySeries, totalProductionLoss, records, dateRange]
+    [
+      productionKpis,
+      downtime,
+      quality,
+      oeeSummary,
+      manufacturing,
+      dailySeries,
+      downtimeDailySeries,
+      byLine,
+      byShift,
+      byStage,
+      byMaterial,
+      byWorkCenter,
+      downtimeByWorkCenter,
+      downtimeByStage,
+      downtimeByLine,
+      downtimeByShift,
+      lossByWorkCenter,
+      lossByStage,
+      lossByLine,
+      lossByShift,
+      lossByMachine,
+      lossByMaterial,
+      lossDailySeries,
+      totalProductionLoss,
+      records,
+      dateRange,
+      periodWindow,
+      previousRecords.length,
+      periodComparison,
+      granularTrendSeries,
+      monthlyTargetActual,
+      weeklyTargetActual,
+      quarterlyTargetActual,
+      yearlyTargetActual,
+      hierarchyAnalysis,
+    ]
   );
 }

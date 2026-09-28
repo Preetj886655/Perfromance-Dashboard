@@ -107,15 +107,24 @@ def create_user(payload: UserCreateRequest, db: Session = Depends(get_db)) -> Us
     employee_code = _normalize_employee_code(payload.employee_code)
     email = _normalize_email(payload.email)
     if not employee_code:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="employee_code is required")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="employee_code is required"
+        )
     if not email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="email is required")
     if not payload.password or len(payload.password.strip()) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 8 characters")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 8 characters"
+        )
     _validate_targets(db, plant_id=payload.plant_id, department_id=payload.department_id)
 
-    if db.scalar(select(User).where(func.lower(User.employee_code) == employee_code.lower())) is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee code already exists")
+    if (
+        db.scalar(select(User).where(func.lower(User.employee_code) == employee_code.lower()))
+        is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Employee code already exists"
+        )
     if db.scalar(select(User).where(func.lower(User.email) == email)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
 
@@ -132,7 +141,9 @@ def create_user(payload: UserCreateRequest, db: Session = Depends(get_db)) -> Us
 
     for role_code in payload.role_codes:
         role = _role_by_code(db, role_code)
-        existing = db.scalar(select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id))
+        existing = db.scalar(
+            select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)
+        )
         if existing is None:
             db.add(UserRole(user_id=user.id, role_id=role.id))
 
@@ -159,21 +170,33 @@ def update_user(
     if payload.employee_code is not None:
         employee_code = _normalize_employee_code(payload.employee_code)
         if not employee_code:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="employee_code cannot be blank")
-        if db.scalar(
-            select(User).where(
-                func.lower(User.employee_code) == employee_code.lower(),
-                User.id != user.id,
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="employee_code cannot be blank"
             )
-        ) is not None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee code already exists")
+        if (
+            db.scalar(
+                select(User).where(
+                    func.lower(User.employee_code) == employee_code.lower(),
+                    User.id != user.id,
+                )
+            )
+            is not None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Employee code already exists"
+            )
         user.employee_code = employee_code
 
     if payload.email is not None:
         email = _normalize_email(payload.email)
         if not email:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="email cannot be blank")
-        if db.scalar(select(User).where(func.lower(User.email) == email, User.id != user.id)) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="email cannot be blank"
+            )
+        if (
+            db.scalar(select(User).where(func.lower(User.email) == email, User.id != user.id))
+            is not None
+        ):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
         user.email = email
 
@@ -181,7 +204,9 @@ def update_user(
         _validate_targets(
             db,
             plant_id=payload.plant_id if payload.plant_id is not None else user.plant_id,
-            department_id=payload.department_id if payload.department_id is not None else user.department_id,
+            department_id=payload.department_id
+            if payload.department_id is not None
+            else user.department_id,
         )
 
     if payload.plant_id is not None:
@@ -263,7 +288,9 @@ def assign_user_roles(
     dependencies=[Depends(require_permission("users", "MANAGE"))],
     summary="Remove a user role",
 )
-def remove_user_role(user_id: UUID = Path(...), role_id: UUID = Path(...), db: Session = Depends(get_db)) -> UserResponse:
+def remove_user_role(
+    user_id: UUID = Path(...), role_id: UUID = Path(...), db: Session = Depends(get_db)
+) -> UserResponse:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

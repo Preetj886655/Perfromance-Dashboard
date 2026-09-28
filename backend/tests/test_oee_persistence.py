@@ -10,7 +10,7 @@ None flushes as SQL NULL (never coerced to 0).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -37,7 +37,6 @@ from app.services.oee_calculator import (
     calculate_oee_metrics,
 )
 from app.services.oee_persistence import persist_production_record_metrics
-
 
 # --- DPR_OEE approved fixtures (same as calculator tests) ---
 
@@ -209,9 +208,7 @@ def _count_metrics(session: Session, production_record_id: uuid.UUID) -> int:
         session.scalar(
             select(func.count())
             .select_from(ProductionRecordMetrics)
-            .where(
-                ProductionRecordMetrics.production_record_id == production_record_id
-            )
+            .where(ProductionRecordMetrics.production_record_id == production_record_id)
         )
         or 0
     )
@@ -222,13 +219,17 @@ def _sql_null_flags(
 ) -> dict[str, bool]:
     """Return whether each column is SQL NULL (True) via raw SELECT."""
     cols_sql = ", ".join(f"({c} IS NULL) AS {c}_is_null" for c in columns)
-    row = session.execute(
-        text(
-            f"SELECT {cols_sql} FROM production_record_metrics "
-            f"WHERE production_record_id = :pid"
-        ),
-        {"pid": production_record_id},
-    ).mappings().one()
+    row = (
+        session.execute(
+            text(
+                f"SELECT {cols_sql} FROM production_record_metrics "
+                f"WHERE production_record_id = :pid"
+            ),
+            {"pid": production_record_id},
+        )
+        .mappings()
+        .one()
+    )
     return {c: bool(row[f"{c}_is_null"]) for c in columns}
 
 
@@ -237,7 +238,7 @@ def _sql_null_flags(
 
 def test_persist_row5_excel_parity(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 15, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 15, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,
@@ -252,9 +253,7 @@ def test_persist_row5_excel_parity(db_session: Session) -> None:
 
     assert metrics.production_record_id == record.id
     assert metrics.oee == pytest.approx(Decimal("0.8977272727"), abs=Decimal("1e-8"))
-    assert metrics.availability == pytest.approx(
-        Decimal("0.9696969697"), abs=Decimal("1e-8")
-    )
+    assert metrics.availability == pytest.approx(Decimal("0.9696969697"), abs=Decimal("1e-8"))
     assert metrics.performance == Decimal("0.9375")
     assert metrics.quality == Decimal("0.9875")
     assert metrics.machine_utilisation == pytest.approx(
@@ -266,7 +265,7 @@ def test_persist_row5_excel_parity(db_session: Session) -> None:
 
 def test_persist_row6_excel_parity(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 16, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 16, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,
@@ -293,7 +292,7 @@ def test_persist_row6_excel_parity(db_session: Session) -> None:
 
 def test_persist_af_ag_and_oee_product(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 17, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 17, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,
@@ -314,7 +313,7 @@ def test_persist_af_ag_and_oee_product(db_session: Session) -> None:
 
 def test_persist_idempotent_upsert(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 18, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 18, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,
@@ -348,7 +347,7 @@ def test_persist_idempotent_upsert(db_session: Session) -> None:
 def test_null_ratios_not_coerced_to_zero(db_session: Session) -> None:
     """A/B/C: available=0 / run=0 / produced=0 → NULL persists (not 0)."""
     masters = _seed_masters(db_session)
-    base = datetime(2024, 1, 20, 8, 0, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 20, 8, 0, tzinfo=UTC)
 
     # A. available = 0
     rec_a = _make_production_record(
@@ -444,8 +443,8 @@ def test_null_ratios_not_coerced_to_zero(db_session: Session) -> None:
 
 def test_q1_stop_before_start_no_plus_24h(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 21, 20, 0, tzinfo=timezone.utc)
-    stop = datetime(2024, 1, 21, 8, 0, tzinfo=timezone.utc)  # earlier same calendar day
+    start = datetime(2024, 1, 21, 20, 0, tzinfo=UTC)
+    stop = datetime(2024, 1, 21, 8, 0, tzinfo=UTC)  # earlier same calendar day
 
     record = _make_production_record(
         db_session,
@@ -524,7 +523,7 @@ def test_q1_stop_before_start_no_plus_24h(db_session: Session) -> None:
 
 def test_zero_cavity_or_cycle_null_target(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    base = datetime(2024, 1, 24, 8, 30, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 24, 8, 30, tzinfo=UTC)
     stop = base + timedelta(minutes=720)
 
     # cavity = 0
@@ -575,7 +574,7 @@ def test_zero_cavity_or_cycle_null_target(db_session: Session) -> None:
 
 def test_null_round_trip_returns_python_none(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    base = datetime(2024, 1, 25, 8, 0, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 25, 8, 0, tzinfo=UTC)
     record = _make_production_record(
         db_session,
         masters,
@@ -608,7 +607,7 @@ def test_null_round_trip_returns_python_none(db_session: Session) -> None:
 
 def test_upsert_complete_to_undefined_nulls(db_session: Session) -> None:
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 26, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 26, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,
@@ -635,9 +634,7 @@ def test_upsert_complete_to_undefined_nulls(db_session: Session) -> None:
     assert second.quality is None
     assert second.oee is None
     assert second.actual_qty_per_hr == Decimal("0")
-    flags = _sql_null_flags(
-        db_session, record.id, ["rejection_ppm", "quality", "oee"]
-    )
+    flags = _sql_null_flags(db_session, record.id, ["rejection_ppm", "quality", "oee"])
     assert flags["rejection_ppm"] is True
     assert flags["quality"] is True
     assert flags["oee"] is True
@@ -655,7 +652,7 @@ def test_rejection_greater_than_produced_check_still_blocks(
     relax those CHECKs — flush still raises IntegrityError. Out of scope.
     """
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 27, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 27, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,
@@ -691,7 +688,7 @@ def test_rejection_greater_than_produced_check_still_blocks(
 def test_formula_metadata(db_session: Session) -> None:
     """formula_version=1 persisted; formula_key is service constant only (no column)."""
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 22, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 22, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,
@@ -713,7 +710,7 @@ def test_formula_metadata(db_session: Session) -> None:
 def test_no_leftover_rows_after_rollback(db_session: Session) -> None:
     """Sanity: counts inside the transaction are local; outer rollback cleans up."""
     masters = _seed_masters(db_session)
-    start = datetime(2024, 1, 23, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 23, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     record = _make_production_record(
         db_session,

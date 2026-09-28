@@ -157,9 +157,7 @@ def _resolve_plant_id(
     try:
         return UUID(str(raw))
     except (TypeError, ValueError) as exc:
-        raise ImportJobNotEligibleError(
-            "ImportJob.mapping_config.plant_id is invalid"
-        ) from exc
+        raise ImportJobNotEligibleError("ImportJob.mapping_config.plant_id is invalid") from exc
 
 
 def _resolve_file_bytes(
@@ -292,7 +290,7 @@ def run_import_job(
         raise
     except ImportWorkerError:
         raise
-    except Exception as exc:  # noqa: BLE001 — never leak secrets
+    except Exception:  # noqa: BLE001 — never leak secrets
         job.status = STATUS_FAILED
         job.error_summary = _SAFE_UNEXPECTED
         session.flush()

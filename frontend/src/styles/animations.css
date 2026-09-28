@@ -217,6 +217,12 @@
   animation: rotate var(--duration-slower) linear infinite;
 }
 
+/* spin = alias for rotate, used by inline chart loading spinners */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ============================================ */
 /* GLOW EFFECT (for live indicators) */
 /* ============================================ */

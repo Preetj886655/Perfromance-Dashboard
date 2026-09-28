@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import secrets
-import sys
 from collections.abc import Sequence
 
 from sqlalchemy import func, select
@@ -74,9 +73,12 @@ def ensure_super_admin(
     if db.scalar(select(User).where(func.lower(User.email) == normalized_email)) is not None:
         raise ValueError("A user with this email already exists.")
 
-    if db.scalar(
-        select(User).where(func.lower(User.employee_code) == normalized_employee_code.lower())
-    ) is not None:
+    if (
+        db.scalar(
+            select(User).where(func.lower(User.employee_code) == normalized_employee_code.lower())
+        )
+        is not None
+    ):
         raise ValueError("A user with this employee code already exists.")
 
     user = User(

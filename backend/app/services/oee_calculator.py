@@ -34,10 +34,10 @@ Intermediates are Decimal - no silent float rounding.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Iterable, Mapping
 
 # Registry identity for production_record_metrics.formula_version (integer column).
 FORMULA_KEY = "dpr_oee_v1"
@@ -92,9 +92,7 @@ def _blank_as_zero(value: Decimal | int | float | str | None) -> Decimal:
     return _ZERO if converted is None else converted
 
 
-def _safe_div(
-    numerator: Decimal | None, denominator: Decimal | None
-) -> Decimal | None:
+def _safe_div(numerator: Decimal | None, denominator: Decimal | None) -> Decimal | None:
     """Excel IFERROR(num/den, "") - None on missing operands or division by zero."""
     if numerator is None or denominator is None:
         return None
@@ -201,9 +199,7 @@ def calculate_oee_metrics(
     if available is None or target_qty_per_hr is None:
         machine_utilisation: Decimal | None = None
     else:
-        machine_utilisation = _safe_div(
-            produced, (available / _SIXTY) * target_qty_per_hr
-        )
+        machine_utilisation = _safe_div(produced, (available / _SIXTY) * target_qty_per_hr)
 
     # AS / AT - no clamp even if rejection > produced
     rejection_ppm = _safe_div(total_rejection * _ONE_MILLION, produced)

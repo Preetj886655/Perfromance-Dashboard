@@ -5,7 +5,7 @@ Fixtures for rows 5-6 match approved validation against PRIL_DPR_OEE.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -15,7 +15,6 @@ from app.services.oee_calculator import (
     FORMULA_VERSION,
     calculate_oee_metrics,
 )
-
 
 # --- Approved Excel row fixtures (DPR_OEE validation) ---
 
@@ -48,9 +47,7 @@ ROW5_EXPECTED = {
     "total_rejection_qty": Decimal("15"),
     "rejection_ppm": Decimal("12500"),
     "quality": Decimal("0.9875"),
-    "oee": (Decimal("640") / Decimal("660"))
-    * Decimal("0.9375")
-    * Decimal("0.9875"),
+    "oee": (Decimal("640") / Decimal("660")) * Decimal("0.9375") * Decimal("0.9875"),
 }
 
 ROW6 = {
@@ -72,8 +69,7 @@ ROW6_EXPECTED = {
     "availability": Decimal("670") / Decimal("690"),
     "actual_qty_per_hr": Decimal("1100") / Decimal("670") * Decimal("60"),
     "performance": (Decimal("1100") / Decimal("670") * Decimal("60")) / Decimal("120"),
-    "machine_utilisation": Decimal("1100")
-    / ((Decimal("690") / Decimal("60")) * Decimal("120")),
+    "machine_utilisation": Decimal("1100") / ((Decimal("690") / Decimal("60")) * Decimal("120")),
     "total_rejection_qty": Decimal("4"),
     "rejection_ppm": Decimal("4") / Decimal("1100") * Decimal("1000000"),
     "quality": (Decimal("1100") - Decimal("4")) / Decimal("1100"),
@@ -118,7 +114,7 @@ def test_oee_uses_af_not_ag() -> None:
 
 def test_row5_from_start_stop_timestamps() -> None:
     """Same-day start/stop: (stop-start) minutes matches Excel (F-E)*24*60."""
-    start = datetime(2024, 1, 15, 8, 30, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 15, 8, 30, tzinfo=UTC)
     stop = start + timedelta(minutes=720)
     result = calculate_oee_metrics(
         start_at=start,
@@ -274,8 +270,8 @@ def test_rejection_greater_than_produced_no_clamp() -> None:
 
 def test_stop_before_start_q1_shift_derived_none() -> None:
     """Q1 TBC: do not invent +24h; shift-derived fields are None."""
-    start = datetime(2024, 1, 15, 20, 0, tzinfo=timezone.utc)
-    stop = datetime(2024, 1, 15, 8, 0, tzinfo=timezone.utc)  # earlier same day
+    start = datetime(2024, 1, 15, 20, 0, tzinfo=UTC)
+    stop = datetime(2024, 1, 15, 8, 0, tzinfo=UTC)  # earlier same day
     result = calculate_oee_metrics(
         start_at=start,
         stop_at=stop,
@@ -303,8 +299,8 @@ def test_stop_before_start_q1_shift_derived_none() -> None:
 
 
 def test_explicit_shift_time_overrides_q1_midnight() -> None:
-    start = datetime(2024, 1, 15, 20, 0, tzinfo=timezone.utc)
-    stop = datetime(2024, 1, 15, 8, 0, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 15, 20, 0, tzinfo=UTC)
+    stop = datetime(2024, 1, 15, 8, 0, tzinfo=UTC)
     result = calculate_oee_metrics(
         start_at=start,
         stop_at=stop,
@@ -318,4 +314,3 @@ def test_explicit_shift_time_overrides_q1_midnight() -> None:
     )
     assert result.q1_midnight_unresolved is False
     _assert_metrics(result, ROW5_EXPECTED)
-

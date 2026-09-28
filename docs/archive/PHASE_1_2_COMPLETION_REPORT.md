@@ -425,7 +425,7 @@ Mobile:   480px → 375px
 ### 1. Verify Authentication
 ```
 Test user created: alice@patil.local
-Password: Secret123!
+Password: [REDACTED]
 Employee Code: EMP-1001
 Role: SUPER_ADMIN
 ```
