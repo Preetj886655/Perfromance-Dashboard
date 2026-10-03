@@ -39,16 +39,25 @@ export function DashboardCarousel({
     return 0;
   });
   const [isPaused, setIsPaused] = useState(false);
-  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const touchStartX = useRef<number>(0);
   const touchEndX = useRef<number>(0);
   const autoPlayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [viewportHeight, setViewportHeight] = useState<number | undefined>(undefined);
 
   const totalSlides = slides.length;
+
+  // Keep active tab visible in horizontal tabs strip
+  useEffect(() => {
+    const activeTab = tabRefs.current[currentIndex];
+    if (activeTab && typeof activeTab.scrollIntoView === "function") {
+      activeTab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  }, [currentIndex]);
 
   // Mirror of currentIndex for timer callbacks: the autoplay interval must know
   // the current slide without reading stale closure state, and must never call
@@ -218,6 +227,35 @@ export function DashboardCarousel({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Horizontal Slide Navigation Strip */}
+      <nav className="dashboard-carousel__tabs-bar" aria-label="Dashboard Slides Navigation">
+        <div className="dashboard-carousel__tabs-track">
+          {slides.map((slide, index) => {
+            const isActive = index === currentIndex;
+            return (
+              <button
+                key={slide.id}
+                ref={(el) => {
+                  tabRefs.current[index] = el;
+                }}
+                type="button"
+                className={`dashboard-carousel__tab-btn ${
+                  isActive ? "dashboard-carousel__tab-btn--active" : ""
+                }`}
+                onClick={() => goToSlide(index)}
+                aria-selected={isActive}
+                role="tab"
+              >
+                <span className="dashboard-carousel__tab-icon" aria-hidden="true">
+                  {slide.icon}
+                </span>
+                <span className="dashboard-carousel__tab-title">{slide.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       <div
         className="dashboard-carousel__viewport"
         style={{

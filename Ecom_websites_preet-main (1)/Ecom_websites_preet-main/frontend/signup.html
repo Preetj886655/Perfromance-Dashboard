@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <title>Create Account — Prachi Luxury Boutique</title>
+</head>
+<body>
+
+<!-- ======= TOP ANNOUNCEMENT BAR ======= -->
+<header class="header-part">
+  <section class="top_text">
+    <div class="head_container container">
+      <div class="head_text">
+        <p><i class="fa-solid fa-gem" style="color:var(--color-gold);font-size:11px"></i> Free Insured Express Delivery · <b>Bridal & Festive Edit 2026</b></p>
+      </div>
+      <div class="sign_in_up">
+        <a href="login.html">Sign In</a>
+        <span style="opacity:0.35">|</span>
+        <a href="signup.html">Create Account</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= MAIN NAVIGATION ROW ======= -->
+  <div class="header-main-row">
+    <div class="navbar-brand">
+      <a href="index.html">
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTe1R3Qo7BKO021XDz0IxJQV6WC5vmh_4PW2g&s"
+             alt="Prachi Boutique" class="logo">
+        <div class="brand-text-wrap">
+          <span class="brand-name">PRACHI</span>
+          <span class="brand-sub">Haute Couture</span>
+        </div>
+      </a>
+    </div>
+
+    <!-- Centered Search Pill -->
+    <div class="header-search-wrap">
+      <i class="fa-solid fa-magnifying-glass header-search-icon"></i>
+      <input type="text" id="headerSearchInput" class="header-search-input" placeholder="Search bridal lehengas, silk sarees, jewelry..." autocomplete="off">
+    </div>
+
+    <!-- Right Action Items -->
+    <div class="header-actions">
+      <a href="orders.html" class="header-utility-link">
+        <i class="fa-regular fa-clock"></i> <span>Orders</span>
+      </a>
+      <a href="addTocard.html" class="header-cart-btn" id="cartvalue">
+        <i class="fa-solid fa-bag-shopping"></i>
+        <span>Bag</span>
+        <span class="cart-count-pill" id="cartCountNum">0</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- ======= CATEGORY HORIZONTAL STRIP ======= -->
+  <nav class="category-nav-strip">
+    <div class="container">
+      <ul class="category-nav-list">
+        <li><a href="index.html" class="cat-nav-link">Home</a></li>
+        <li><a href="product.html" class="cat-nav-link">All Collections</a></li>
+        <li><a href="product.html?category=Lehengas" class="cat-nav-link">Bridal Lehengas</a></li>
+        <li><a href="product.html?category=Sarees" class="cat-nav-link">Banarasi Sarees</a></li>
+        <li><a href="product.html?category=Suits" class="cat-nav-link">Anarkali Suits</a></li>
+        <li><a href="product.html?category=Kurtis" class="cat-nav-link">Festive Kurtis</a></li>
+        <li><a href="product.html?category=Accessories" class="cat-nav-link">Kundan Jewels</a></li>
+        <li><a href="contact.html" class="cat-nav-link">Atelier & Contact</a></li>
+      </ul>
+    </div>
+  </nav>
+</header>
+
+<!-- ======= AUTH SECTION ======= -->
+<section class="auth-page">
+  <div class="auth-card">
+    <h1>Create Account</h1>
+    <p class="subtitle">Join the Prachi private client circle for bespoke bridal fittings and VIP collection previews.</p>
+
+    <div class="auth-field">
+      <label for="name">Full Name</label>
+      <input type="text" id="name" placeholder="E.g. Priya Sharma" autocomplete="name" />
+    </div>
+    <div class="auth-field">
+      <label for="email">Email Address</label>
+      <input type="email" id="email" placeholder="name@example.com" autocomplete="email" />
+    </div>
+    <div class="auth-field">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="At least 6 characters" />
+    </div>
+    <div class="auth-field">
+      <label for="confirmPassword">Confirm Password</label>
+      <input type="password" id="confirmPassword" placeholder="Re-enter password" />
+    </div>
+
+    <button class="auth-btn" id="signupBtn" onclick="handleSignup()">
+      Create Account
+    </button>
+    <div class="auth-msg" id="signupMsg"></div>
+    <div class="auth-link">
+      Already have an account? <a href="login.html">Sign In</a>
+    </div>
+  </div>
+</section>
+
+<!-- ======= FOOTER ======= -->
+<footer>
+  <div class="container grid grid-three--cols">
+    <div class="footer-1--div">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTe1R3Qo7BKO021XDz0IxJQV6WC5vmh_4PW2g&s"
+             alt="Logo" style="height:36px;width:36px;border-radius:50%;border:1px solid var(--color-gold);">
+        <span style="font-weight:800;font-size:20px;color:#fff;letter-spacing:0.06em;">PRACHI</span>
+      </div>
+      <p>Luxury bridal couture, royal silk saris, and handcrafted ceremonial jewelry celebrating Indian heritage with contemporary high-converting design.</p>
+      <p style="margin-top:16px;color:rgba(255,255,255,0.45);font-size:12px;">© 2026 Prachi Beauty Parlour & Haute Couture. All rights reserved.</p>
+    </div>
+
+    <div class="footer-2--div">
+      <p class="footer-subheading">Collections</p>
+      <ul>
+        <li><a href="product.html?category=Lehengas">Bridal Lehengas</a></li>
+        <li><a href="product.html?category=Sarees">Banarasi Sarees</a></li>
+        <li><a href="product.html?category=Suits">Anarkali & Sharara Suits</a></li>
+        <li><a href="product.html?category=Kurtis">Silk Festive Kurtis</a></li>
+        <li><a href="product.html?category=Accessories">Kundan & Polki Jewels</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-3--div">
+      <p class="footer-subheading">Private Concierge</p>
+      <ul>
+        <li><p><strong style="color:var(--color-gold)">Call / WhatsApp:</strong> +91 9839903560</p></li>
+        <li><p><strong style="color:var(--color-gold)">Email:</strong> concierge@prachibeautyparlour.com</p></li>
+        <li><p><strong style="color:var(--color-gold)">Atelier Location:</strong> 1st Floor, Sulempur Bazar, Badlapur, Jaunpur, Uttar Pradesh, India</p></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/api.js"></script>
+<script>
+  if (isLoggedIn()) window.location.href = 'index.html';
+
+  async function handleSignup() {
+    const name            = document.getElementById('name').value.trim();
+    const email           = document.getElementById('email').value.trim();
+    const password        = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const btn             = document.getElementById('signupBtn');
+
+    if (!name || !email || !password) {
+      showMsg('Please fill in all required fields', 'error');
+      return;
+    }
+    if (password.length < 6) {
+      showMsg('Password must be at least 6 characters', 'error');
+      return;
+    }
+    if (password !== confirmPassword) {
+      showMsg('Passwords do not match', 'error');
+      return;
+    }
+
+    btn.disabled  = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating account...';
+
+    const res = await api.post('/auth/signup', { name, email, password });
+
+    if (res.ok) {
+      saveAuth(res.data.token, res.data.user);
+      showMsg('Account created successfully! Welcome to Prachi.', 'success');
+      setTimeout(() => window.location.href = 'index.html', 1200);
+    } else {
+      showMsg(res.data.message || 'Signup failed. Please try again.', 'error');
+      btn.disabled  = false;
+      btn.innerHTML = 'Create Account';
+    }
+  }
+
+  function showMsg(text, type) {
+    const msg = document.getElementById('signupMsg');
+    msg.textContent = text;
+    msg.className   = `auth-msg ${type}`;
+    msg.style.display = 'block';
+  }
+
+  // Trigger signup on Enter
+  ['name', 'email', 'password', 'confirmPassword'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleSignup();
+    });
+  });
+</script>
+</body>
+</html>

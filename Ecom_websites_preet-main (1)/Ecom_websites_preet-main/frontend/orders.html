@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <title>Order History — Prachi Luxury Boutique</title>
+</head>
+<body>
+
+<!-- ======= TOP ANNOUNCEMENT BAR ======= -->
+<header class="header-part">
+  <section class="top_text">
+    <div class="head_container container">
+      <div class="head_text">
+        <p><i class="fa-solid fa-gem" style="color:var(--color-gold);font-size:11px"></i> Free Insured Express Delivery · <b>Bridal & Festive Edit 2026</b></p>
+      </div>
+      <div class="sign_in_up">
+        <a href="login.html">Sign In</a>
+        <span style="opacity:0.35">|</span>
+        <a href="signup.html">Create Account</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= MAIN NAVIGATION ROW ======= -->
+  <div class="header-main-row">
+    <div class="navbar-brand">
+      <a href="index.html">
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTe1R3Qo7BKO021XDz0IxJQV6WC5vmh_4PW2g&s"
+             alt="Prachi Boutique" class="logo">
+        <div class="brand-text-wrap">
+          <span class="brand-name">PRACHI</span>
+          <span class="brand-sub">Haute Couture</span>
+        </div>
+      </a>
+    </div>
+
+    <!-- Centered Search Pill -->
+    <div class="header-search-wrap">
+      <i class="fa-solid fa-magnifying-glass header-search-icon"></i>
+      <input type="text" id="headerSearchInput" class="header-search-input" placeholder="Search bridal lehengas, silk sarees, jewelry..." autocomplete="off">
+    </div>
+
+    <!-- Right Action Items -->
+    <div class="header-actions">
+      <a href="orders.html" class="header-utility-link">
+        <i class="fa-regular fa-clock"></i> <span>Orders</span>
+      </a>
+      <a href="addTocard.html" class="header-cart-btn" id="cartvalue">
+        <i class="fa-solid fa-bag-shopping"></i>
+        <span>Bag</span>
+        <span class="cart-count-pill" id="cartCountNum">0</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- ======= CATEGORY HORIZONTAL STRIP ======= -->
+  <nav class="category-nav-strip">
+    <div class="container">
+      <ul class="category-nav-list">
+        <li><a href="index.html" class="cat-nav-link">Home</a></li>
+        <li><a href="product.html" class="cat-nav-link">All Collections</a></li>
+        <li><a href="product.html?category=Lehengas" class="cat-nav-link">Bridal Lehengas</a></li>
+        <li><a href="product.html?category=Sarees" class="cat-nav-link">Banarasi Sarees</a></li>
+        <li><a href="product.html?category=Suits" class="cat-nav-link">Anarkali Suits</a></li>
+        <li><a href="product.html?category=Kurtis" class="cat-nav-link">Festive Kurtis</a></li>
+        <li><a href="product.html?category=Accessories" class="cat-nav-link">Kundan Jewels</a></li>
+        <li><a href="contact.html" class="cat-nav-link">Atelier & Contact</a></li>
+      </ul>
+    </div>
+  </nav>
+</header>
+
+<!-- ======= ORDERS SECTION ======= -->
+<section class="orders-page" style="padding: 50px 0 80px;">
+  <div class="container" style="max-width: 900px;">
+    <div class="section-header-wrap" style="text-align: left; margin-bottom: 32px;">
+      <span class="section-eyebrow">Client Portal</span>
+      <h1 class="section-title">Order History & Tracking</h1>
+      <p class="section-subtitle">View real-time status, courier tracking, and details of your luxury purchases.</p>
+    </div>
+
+    <!-- Login prompt -->
+    <div id="loginPrompt" style="display:none;text-align:center;padding:70px 20px;background:var(--color-surface-subtle);border-radius:var(--radius-card);border:1px dashed var(--color-border);">
+      <i class="fa-solid fa-lock" style="font-size:42px;color:var(--color-gold);display:block;margin-bottom:16px"></i>
+      <h3 style="font-size:20px;font-weight:700;margin-bottom:8px">Sign In to View Orders</h3>
+      <p style="color:var(--color-text-secondary);font-size:14px;margin-bottom:24px">Track your shipments and view order archives.</p>
+      <a href="login.html?redirect=orders.html" class="btn-capsule-primary" style="background:var(--color-cta-dark);color:#fff;">
+        Sign In to Continue
+      </a>
+    </div>
+
+    <div id="ordersContainer"></div>
+  </div>
+</section>
+
+<!-- ======= FOOTER ======= -->
+<footer>
+  <div class="container grid grid-three--cols">
+    <div class="footer-1--div">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTe1R3Qo7BKO021XDz0IxJQV6WC5vmh_4PW2g&s"
+             alt="Logo" style="height:36px;width:36px;border-radius:50%;border:1px solid var(--color-gold);">
+        <span style="font-weight:800;font-size:20px;color:#fff;letter-spacing:0.06em;">PRACHI</span>
+      </div>
+      <p>Luxury bridal couture, royal silk saris, and handcrafted ceremonial jewelry celebrating Indian heritage with contemporary high-converting design.</p>
+      <p style="margin-top:16px;color:rgba(255,255,255,0.45);font-size:12px;">© 2026 Prachi Beauty Parlour & Haute Couture. All rights reserved.</p>
+    </div>
+
+    <div class="footer-2--div">
+      <p class="footer-subheading">Collections</p>
+      <ul>
+        <li><a href="product.html?category=Lehengas">Bridal Lehengas</a></li>
+        <li><a href="product.html?category=Sarees">Banarasi Sarees</a></li>
+        <li><a href="product.html?category=Suits">Anarkali & Sharara Suits</a></li>
+        <li><a href="product.html?category=Kurtis">Silk Festive Kurtis</a></li>
+        <li><a href="product.html?category=Accessories">Kundan & Polki Jewels</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-3--div">
+      <p class="footer-subheading">Private Concierge</p>
+      <ul>
+        <li><p><strong style="color:var(--color-gold)">Call / WhatsApp:</strong> +91 9839903560</p></li>
+        <li><p><strong style="color:var(--color-gold)">Email:</strong> concierge@prachibeautyparlour.com</p></li>
+        <li><p><strong style="color:var(--color-gold)">Atelier Location:</strong> 1st Floor, Sulempur Bazar, Badlapur, Jaunpur, Uttar Pradesh, India</p></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/api.js"></script>
+<script>
+async function loadOrders() {
+  if (!isLoggedIn()) {
+    document.getElementById('loginPrompt').style.display = 'block';
+    return;
+  }
+
+  const res = await api.get('/orders');
+  const container = document.getElementById('ordersContainer');
+
+  if (!res.ok) {
+    container.innerHTML = '<p style="color:var(--color-badge-sale);padding:24px;text-align:center;">Could not load orders. Please refresh.</p>';
+    return;
+  }
+
+  const { orders } = res.data;
+
+  if (!orders || !orders.length) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:70px 20px;background:var(--color-surface-subtle);border-radius:var(--radius-card);border:1px dashed var(--color-border);">
+        <i class="fa-solid fa-box-open" style="font-size:44px;color:var(--color-text-tertiary);display:block;margin-bottom:14px"></i>
+        <h3 style="font-size:18px;font-weight:700;margin-bottom:6px">No orders placed yet</h3>
+        <p style="color:var(--color-text-secondary);font-size:13.5px;margin-bottom:20px">Explore handcrafted couture and start your bridal wishlist.</p>
+        <a href="product.html" class="btn-capsule-primary" style="background:var(--color-cta-dark);color:#fff;">
+          Explore Masterpieces
+        </a>
+      </div>`;
+    return;
+  }
+
+  const statusMap = {
+    placed:    { label: 'Order Placed',  cls: 'status-placed'    },
+    confirmed: { label: 'Confirmed',     cls: 'status-confirmed' },
+    shipped:   { label: 'Shipped',       cls: 'status-shipped'   },
+    delivered: { label: 'Delivered',     cls: 'status-delivered' },
+    cancelled: { label: 'Cancelled',     cls: 'status-cancelled' }
+  };
+
+  container.innerHTML = orders.map(order => {
+    const st   = statusMap[order.orderStatus] || statusMap.placed;
+    const date = new Date(order.placedAt).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+    const itemsList = order.items.map(i =>
+      `<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--color-border)">
+        <img src="${i.imageUrl || ''}" alt="${i.name}" style="width:58px;height:72px;object-fit:cover;border-radius:8px;background:var(--color-surface-subtle);">
+        <div style="flex:1;">
+          <p style="font-weight:700;font-size:14.5px;color:var(--color-text-primary);">${i.name}</p>
+          <p style="font-size:13px;color:var(--color-text-secondary);margin-top:2px">Qty: ${i.quantity} &nbsp;·&nbsp; ₹${Number(i.price).toLocaleString('en-IN')}</p>
+        </div>
+      </div>`
+    ).join('');
+
+    return `
+      <div class="order-card" style="background:#fff;border-radius:var(--radius-card);border:1px solid var(--color-border);padding:24px;margin-bottom:20px;box-shadow:var(--shadow-sm);">
+        <div class="order-header" style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid var(--color-border);margin-bottom:12px;">
+          <div>
+            <p class="order-id" style="font-weight:800;font-size:15px;color:var(--color-text-primary);letter-spacing:0.04em;">ORDER #${order._id.slice(-8).toUpperCase()}</p>
+            <p style="font-size:12.5px;color:var(--color-text-secondary);margin-top:3px">${date} &nbsp;·&nbsp; Payment: ${order.paymentMethod}</p>
+          </div>
+          <span class="order-status ${st.cls}" style="padding:4px 12px;border-radius:var(--radius-pill);font-size:11px;font-weight:700;letter-spacing:0.04em;">${st.label}</span>
+        </div>
+        ${itemsList}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:10px;">
+          <p style="font-size:12.5px;color:var(--color-text-secondary)">
+            <i class="fa-solid fa-location-dot"></i> ${order.shippingAddress.city}, ${order.shippingAddress.state}
+          </p>
+          <p style="font-weight:800;font-size:17px;color:var(--color-text-primary);">
+            Total: ₹${Number(order.totalAmount).toLocaleString('en-IN')}
+          </p>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', loadOrders);
+</script>
+</body>
+</html>
