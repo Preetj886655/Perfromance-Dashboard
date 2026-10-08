@@ -6,6 +6,8 @@
  */
 
 import { useState } from 'react';
+import { motion } from 'motion/react';
+import { springMicro } from '../styles/motionVariants';
 import type { LiveSyncStatus } from '../hooks/useManufacturingLivePolling';
 
 interface LiveStatusIndicatorProps {
@@ -104,15 +106,18 @@ export function LiveStatusIndicator({ status, onRefresh, showDetails = true }: L
       )}
 
       {onRefresh && (
-        <button
+        <motion.button
           className="live-status-indicator__refresh-btn"
           onClick={handleRefresh}
           disabled={isRefreshing}
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          transition={springMicro}
           title="Refresh data"
           aria-label="Refresh data"
         >
           <span className={isRefreshing ? 'rotate' : ''}>↻</span>
-        </button>
+        </motion.button>
       )}
     </div>
   );

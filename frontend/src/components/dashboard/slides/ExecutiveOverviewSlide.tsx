@@ -27,6 +27,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import ReactECharts from "echarts-for-react";
+import { motion } from "motion/react";
+import { cardVariants, staggerContainer, springMicro } from "../../../styles/motionVariants";
+import { AnimatedCounter } from "../../common/AnimatedCounter";
 import type { DashboardAnalytics } from "./useDashboardAnalytics";
 import { KpiCard, KpiGrid } from "./KpiCard";
 import { TargetActualChart } from "./TargetActualChart";
@@ -86,7 +89,12 @@ function PeriodChartCard({
   const latestAch = latestPoint?.achievement;
 
   return (
-    <div className="target-actual-card" aria-label={title}>
+    <motion.div
+      variants={cardVariants}
+      whileHover={{ y: -2, transition: springMicro }}
+      className="target-actual-card"
+      aria-label={title}
+    >
       <div className="target-actual-card__header">
         <div className="target-actual-card__title-group">
           <span className="target-actual-card__eyebrow">{eyebrow}</span>
@@ -105,19 +113,19 @@ function PeriodChartCard({
           <div className="card-stat card-stat--target" title={`Target: ${formatExactQuantity(latestTarget)} NOS`}>
             <span className="card-stat__lbl">Target:</span>
             <span className="card-stat__val">
-              {formatCompactQuantity(latestTarget)} <small>({formatExactQuantity(latestTarget)})</small>
+              <AnimatedCounter value={formatCompactQuantity(latestTarget)} /> <small>({formatExactQuantity(latestTarget)})</small>
             </span>
           </div>
           <div className="card-stat card-stat--actual" title={`Actual: ${formatExactQuantity(latestActual)} NOS`}>
             <span className="card-stat__lbl">Actual:</span>
             <span className="card-stat__val">
-              {formatCompactQuantity(latestActual)} <small>({formatExactQuantity(latestActual)})</small>
+              <AnimatedCounter value={formatCompactQuantity(latestActual)} /> <small>({formatExactQuantity(latestActual)})</small>
             </span>
           </div>
           <div className="card-stat card-stat--gap" title={`Gap: ${formatExactQuantity(latestGap)} NOS`}>
             <span className="card-stat__lbl">Gap:</span>
             <span className="card-stat__val">
-              {formatCompactQuantity(latestGap)} <small>({formatExactQuantity(latestGap)})</small>
+              <AnimatedCounter value={formatCompactQuantity(latestGap)} /> <small>({formatExactQuantity(latestGap)})</small>
             </span>
           </div>
           <div className="card-stat card-stat--ach">
@@ -126,7 +134,7 @@ function PeriodChartCard({
               className="card-stat__val card-stat__val--ach"
               style={{ color: latestAch !== null && latestAch !== undefined && latestAch >= 100 ? "#059669" : "#2563EB" }}
             >
-              {latestAch !== null && latestAch !== undefined ? `${latestAch.toFixed(1)}%` : "—"}
+              {latestAch !== null && latestAch !== undefined ? <AnimatedCounter value={`${latestAch.toFixed(1)}%`} /> : "—"}
             </span>
           </div>
         </div>
@@ -136,7 +144,7 @@ function PeriodChartCard({
       <div className="target-actual-card__chart-body">
         <TargetActualChart title={title} data={safeData} height={280} />
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -688,7 +696,12 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
         </div>
 
         {/* 4 SIMULTANEOUS CHARTS: 2x2 Grid on Desktop, 1 Column on Tablet/Mobile */}
-        <div className="target-actual-grid">
+        <motion.div
+          className="target-actual-grid"
+          variants={staggerContainer}
+          initial="hidden"
+          animate="visible"
+        >
           {/* Card 1: Monthly Performance */}
           <PeriodChartCard
             eyebrow="TARGET VS ACTUAL"
@@ -724,16 +737,26 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
             periodLabel="Latest Year"
             data={analytics?.yearlyTargetActual ?? []}
           />
-        </div>
+        </motion.div>
       </section>
 
       {/* ===================================================================
           3. LOWER ANALYTICS ROW (3 COLUMNS)
           Col 1: Machine Performance | Col 2: Top 5 Downtime | Col 3: Stage Donut
           =================================================================== */}
-      <section className="exec-bottom-row" aria-label="Detailed Operational Breakdown">
+      <motion.section
+        className="exec-bottom-row"
+        aria-label="Detailed Operational Breakdown"
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+      >
         {/* Column 1: Machine Performance */}
-        <div className="exec-bottom-card">
+        <motion.div
+          className="exec-bottom-card"
+          variants={cardVariants}
+          whileHover={{ y: -2, transition: springMicro }}
+        >
           <div className="exec-bottom-card__header">
             <h4 className="exec-bottom-card__title">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -811,10 +834,14 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
               </tbody>
             </table>
           </div>
-        </div>
+        </motion.div>
 
         {/* Column 2: Downtime Analysis (Top 5 Causes) */}
-        <div className="exec-bottom-card">
+        <motion.div
+          className="exec-bottom-card"
+          variants={cardVariants}
+          whileHover={{ y: -2, transition: springMicro }}
+        >
           <div className="exec-bottom-card__header">
             <h4 className="exec-bottom-card__title">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -838,10 +865,14 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
             </div>
           </div>
           <ReactECharts option={downtimeHorizontalOption} style={{ height: "230px", width: "100%" }} notMerge />
-        </div>
+        </motion.div>
 
         {/* Column 3: Production by Stage */}
-        <div className="exec-bottom-card">
+        <motion.div
+          className="exec-bottom-card"
+          variants={cardVariants}
+          whileHover={{ y: -2, transition: springMicro }}
+        >
           <div className="exec-bottom-card__header">
             <h4 className="exec-bottom-card__title">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -866,8 +897,8 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
             </div>
           </div>
           <ReactECharts option={stageDonutOption} style={{ height: "230px", width: "100%" }} notMerge />
-        </div>
-      </section>
+        </motion.div>
+      </motion.section>
 
       {/* ===================================================================
           4. OPERATIONAL INTELLIGENCE & KEY INSIGHTS (Derived dynamically)
@@ -890,18 +921,39 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
           <span className="exec-insights-badge">Live Evidence</span>
         </div>
 
-        <div className="exec-insights-cards-grid">
+        <motion.div
+          className="exec-insights-cards-grid"
+          variants={staggerContainer}
+          initial="hidden"
+          animate="visible"
+        >
           {/* Insight 1: Attainment */}
-          <div className="exec-insight-card" onClick={() => onNavigateSlide?.("production")} role="button" tabIndex={0}>
+          <motion.div
+            className="exec-insight-card"
+            variants={cardVariants}
+            whileHover={{ y: -2, scale: 1.008, transition: springMicro }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => onNavigateSlide?.("production")}
+            role="button"
+            tabIndex={0}
+          >
             <div className="exec-insight-card__tag" style={{ color: "#2563EB", background: "#EFF6FF" }}>Production Attainment</div>
             <p className="exec-insight-card__text">
               Plant achievement stands at <strong>{achievement !== null ? `${achievement.toFixed(2)}%` : "N/A"}</strong>
               {hasPrev ? ` (${comp.achievement.formattedDelta} vs prior period)` : ""}, delivering <strong>{formatCompactQuantity(productionKpis.totalProduction)} NOS</strong> against <strong>{formatCompactQuantity(productionKpis.totalTargetProduction)} NOS</strong> target.
             </p>
-          </div>
+          </motion.div>
 
           {/* Insight 2: Downtime */}
-          <div className="exec-insight-card" onClick={() => onNavigateSlide?.("downtime")} role="button" tabIndex={0}>
+          <motion.div
+            className="exec-insight-card"
+            variants={cardVariants}
+            whileHover={{ y: -2, scale: 1.008, transition: springMicro }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => onNavigateSlide?.("downtime")}
+            role="button"
+            tabIndex={0}
+          >
             <div className="exec-insight-card__tag" style={{ color: "#EF4444", background: "#FEF2F2" }}>Downtime Impact</div>
             <p className="exec-insight-card__text">
               Total downtime is <strong>{formatNumber(downtime.totalDowntimeMinutes)} min</strong>.
@@ -909,36 +961,60 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
                 ? ` Primary bottleneck is ${topDowntimeCause.key} (${Math.round(topDowntimeCause.minutes).toLocaleString()} min, ${(totalDowntimeMin > 0 ? (topDowntimeCause.minutes / totalDowntimeMin * 100).toFixed(1) : 0)}% of total).`
                 : " Stoppages remain within nominal limits."}
             </p>
-          </div>
+          </motion.div>
 
           {/* Insight 3: Stage Distribution */}
-          <div className="exec-insight-card" onClick={() => onNavigateSlide?.("stage")} role="button" tabIndex={0}>
+          <motion.div
+            className="exec-insight-card"
+            variants={cardVariants}
+            whileHover={{ y: -2, scale: 1.008, transition: springMicro }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => onNavigateSlide?.("stage")}
+            role="button"
+            tabIndex={0}
+          >
             <div className="exec-insight-card__tag" style={{ color: "#10B981", background: "#ECFDF5" }}>Stage Flow</div>
             <p className="exec-insight-card__text">
               {topStage && topStagePct
                 ? `Leading stage ${topStage.key} accounts for ${topStagePct}% of total volume (${formatCompactQuantity(topStage.production)} NOS).`
                 : "Stage distribution is evenly balanced across the production cycle."}
             </p>
-          </div>
+          </motion.div>
 
           {/* Insight 4: Quality & Defects */}
-          <div className="exec-insight-card" onClick={() => onNavigateSlide?.("quality")} role="button" tabIndex={0}>
+          <motion.div
+            className="exec-insight-card"
+            variants={cardVariants}
+            whileHover={{ y: -2, scale: 1.008, transition: springMicro }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => onNavigateSlide?.("quality")}
+            role="button"
+            tabIndex={0}
+          >
             <div className="exec-insight-card__tag" style={{ color: "#0EA5E9", background: "#F0F9FF" }}>Quality Status</div>
             <p className="exec-insight-card__text">
               Plant rejection rate is <strong>{formatPercent(rejectionRate)}</strong> with <strong>{formatNumber(quality.totalRejection)} defective units</strong> recorded in active scope.
             </p>
-          </div>
+          </motion.div>
 
           {/* Insight 5: Production Loss / Bottleneck */}
-          <div className="exec-insight-card" onClick={() => onNavigateSlide?.("prod-loss")} role="button" tabIndex={0}>
+          <motion.div
+            className="exec-insight-card"
+            variants={cardVariants}
+            whileHover={{ y: -2, scale: 1.008, transition: springMicro }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => onNavigateSlide?.("prod-loss")}
+            role="button"
+            tabIndex={0}
+          >
             <div className="exec-insight-card__tag" style={{ color: "#F97316", background: "#FFF7ED" }}>Bottleneck Center</div>
             <p className="exec-insight-card__text">
               {topLossWc && topLossWc.productionLoss > 0
                 ? `Top loss center is ${topLossWc.workCenterKey} with ${formatCompactQuantity(topLossWc.productionLoss)} NOS lost (${formatExactQuantity(topLossWc.productionLoss)} units).`
                 : "Zero production loss detected under current active parameters."}
             </p>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </section>
 
       {/* ===================================================================

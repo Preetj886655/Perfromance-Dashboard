@@ -19,6 +19,8 @@
  */
 
 import { useMemo, useState } from "react";
+import { motion } from "motion/react";
+import { cardVariants, staggerContainer, springMicro } from "../../../styles/motionVariants";
 import type { DashboardAnalytics } from "./useDashboardAnalytics";
 import type { FilterState } from "../../../pages/ManufacturingDashboard";
 import {
@@ -166,10 +168,17 @@ export function ManagementInsightsSlide({
       </div>
 
       {/* Grid of Evidence-Based Insight Cards */}
-      <div className="evidence-grid">
+      <motion.div
+        className="evidence-grid"
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+      >
         {filteredInsights.map((item: EvidenceInsight) => (
-          <article
+          <motion.article
             key={item.id}
+            variants={cardVariants}
+            whileHover={{ y: -3, transition: springMicro }}
             className={`evidence-card ${priorityClassMap[item.priority]}`}
             aria-label={`${item.category}: ${item.insight}`}
           >
@@ -217,9 +226,9 @@ export function ManagementInsightsSlide({
               <span className="evidence-card__field-label">ACTION</span>
               <p className="evidence-card__action-text">{item.action}</p>
             </div>
-          </article>
+          </motion.article>
         ))}
-      </div>
+      </motion.div>
 
       {filteredInsights.length === 0 && (
         <div className="evidence-empty-state" role="status">

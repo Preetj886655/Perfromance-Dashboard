@@ -6,6 +6,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion } from "motion/react";
+import { springMicro } from "../../styles/motionVariants";
 
 export interface CarouselSlide {
   id: string;
@@ -233,7 +235,7 @@ export function DashboardCarousel({
           {slides.map((slide, index) => {
             const isActive = index === currentIndex;
             return (
-              <button
+              <motion.button
                 key={slide.id}
                 ref={(el) => {
                   tabRefs.current[index] = el;
@@ -243,6 +245,9 @@ export function DashboardCarousel({
                   isActive ? "dashboard-carousel__tab-btn--active" : ""
                 }`}
                 onClick={() => goToSlide(index)}
+                whileHover={{ y: -1 }}
+                whileTap={{ scale: 0.98 }}
+                transition={springMicro}
                 aria-selected={isActive}
                 role="tab"
               >
@@ -250,7 +255,7 @@ export function DashboardCarousel({
                   {slide.icon}
                 </span>
                 <span className="dashboard-carousel__tab-title">{slide.title}</span>
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -292,24 +297,30 @@ export function DashboardCarousel({
         </div>
       </div>
 
-      <button
+      <motion.button
         type="button"
         className="dashboard-carousel__nav dashboard-carousel__nav--prev"
         onClick={goPrev}
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.92 }}
+        transition={springMicro}
         aria-label="Previous slide"
         disabled={isTransitioning}
       >
         ←
-      </button>
-      <button
+      </motion.button>
+      <motion.button
         type="button"
         className="dashboard-carousel__nav dashboard-carousel__nav--next"
         onClick={goNext}
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.92 }}
+        transition={springMicro}
         aria-label="Next slide"
         disabled={isTransitioning}
       >
         →
-      </button>
+      </motion.button>
 
       <div className="dashboard-carousel__footer">
         <span className="dashboard-carousel__counter" aria-live="polite">
@@ -317,29 +328,35 @@ export function DashboardCarousel({
         </span>
         <div className="dashboard-carousel__indicators" role="tablist" aria-label="Slide selection">
           {slides.map((slide, index) => (
-            <button
+            <motion.button
               key={slide.id}
               type="button"
               className={`dashboard-carousel__dot ${
                 index === currentIndex ? "dashboard-carousel__dot--active" : ""
               }`}
               onClick={() => goToSlide(index)}
+              whileHover={{ scale: 1.25 }}
+              whileTap={{ scale: 0.9 }}
+              transition={springMicro}
               role="tab"
               aria-selected={index === currentIndex}
               aria-label={`Go to slide ${index + 1}: ${slide.title}`}
             />
           ))}
         </div>
-        <button
+        <motion.button
           type="button"
           className="dashboard-carousel__play-toggle"
           onClick={() => setAutoPlayEnabled((prev) => !prev)}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          transition={springMicro}
           aria-label={autoPlayEnabled ? "Pause auto-play" : "Resume auto-play"}
           aria-pressed={!autoPlayEnabled}
           title={autoPlayEnabled ? "Pause auto-play" : "Resume auto-play"}
         >
           {autoPlayEnabled ? "⏸" : "▶"}
-        </button>
+        </motion.button>
       </div>
 
       {isPaused && autoPlayEnabled && totalSlides > 1 && (

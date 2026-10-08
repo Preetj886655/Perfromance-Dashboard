@@ -58,6 +58,9 @@ import {
 } from "../components/dashboard/slides";
 import { ImportedDatasetSection } from "../components/dashboard/ImportedDatasetSection";
 import { LiveGoogleSheetsSection } from "../components/dashboard/LiveGoogleSheetsSection";
+import { motion, AnimatePresence } from "motion/react";
+import { springMicro } from "../styles/motionVariants";
+import { DashboardLoadingSkeleton } from "../components/common/DashboardSkeleton";
 
 // ===== DATA SOURCE TYPES =====
 // Strict separation: imported vs live Google Sheets
@@ -515,107 +518,144 @@ function FilterBar({
         </button>
       </div>
 
-      {!expanded && (
-        <div className="filter-panel__summary">
-          <span><strong>Date Range:</strong> {filters.dateFrom ? formatDisplayDate(filters.dateFrom) : "All"} → {filters.dateTo ? formatDisplayDate(filters.dateTo) : "All"}{autoDateMode ? " (auto)" : ""}</span>
-          <span><strong>Period:</strong> {periodLabel}</span>
-          <span><strong>Line:</strong> {filters.line}</span>
-          <span><strong>Shift:</strong> {filters.shift}</span>
-          <span><strong>Stage:</strong> {filters.stage}</span>
-          <span><strong>Machine:</strong> {filters.machine}</span>
-          <span><strong>Material:</strong> {filters.material}</span>
-        </div>
-      )}
-
-      {expanded && (
-      <div id="operations-filters" className="filter-panel__body">
-      <div className="filter-grid">
-        <label className="field field--date-range">
-          <span>Date Range</span>
-          <div className="date-range">
-            <input
-              type="date"
-              value={filters.dateFrom}
-              min={options.minDate || undefined}
-              max={filters.dateTo || options.maxDate || undefined}
-              onChange={(event) => {
-                onChange({ ...filters, dateFrom: event.target.value });
-              }}
-              aria-label="Start date"
-            />
-            <span className="date-range__separator" aria-hidden="true">→</span>
-            <input
-              type="date"
-              value={filters.dateTo}
-              min={filters.dateFrom || options.minDate || undefined}
-              max={options.maxDate || undefined}
-              onChange={(event) => {
-                onChange({ ...filters, dateTo: event.target.value });
-              }}
-              aria-label="End date"
-            />
-            {(filters.dateFrom || filters.dateTo) ? (
-              <button
-                type="button"
-                className="date-range__clear"
-                title="Clear date range"
-                aria-label="Clear date range"
-                onClick={() => {
-                  onChange({ ...filters, dateFrom: "", dateTo: "" });
-                }}
-              >
-                ✕
-              </button>
-            ) : null}
-          </div>
-          <small className={`field__hint ${dateRangeInvalid ? "field__hint--error" : ""}`}>{dateHint}</small>
-        </label>
-
-        <label className="field">
-          <span>Period</span>
-          <select
-            value={filters.period}
-            onChange={(event) => onChange({ ...filters, period: event.target.value as PeriodPreset })}
-            aria-label="Filter by period"
+      <AnimatePresence initial={false}>
+        {!expanded ? (
+          <motion.div
+            key="summary"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="filter-panel__summary"
           >
-            {periodOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </label>
-        {selectFields.map((field) => {
-          const unavailable = field.options.length === 2 && field.options[1] === "Not available in dataset";
-          return (
-            <label key={field.key} className="field">
-              <span>{field.label}</span>
-              <select
-                value={filters[field.key]}
-                onChange={(event) => update(field.key, event.target.value)}
-                disabled={unavailable}
-              >
-                {field.options.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            </label>
-          );
-        })}
-      </div>
+            <span><strong>Date Range:</strong> {filters.dateFrom ? formatDisplayDate(filters.dateFrom) : "All"} → {filters.dateTo ? formatDisplayDate(filters.dateTo) : "All"}{autoDateMode ? " (auto)" : ""}</span>
+            <span><strong>Period:</strong> {periodLabel}</span>
+            <span><strong>Line:</strong> {filters.line}</span>
+            <span><strong>Shift:</strong> {filters.shift}</span>
+            <span><strong>Stage:</strong> {filters.stage}</span>
+            <span><strong>Machine:</strong> {filters.machine}</span>
+            <span><strong>Material:</strong> {filters.material}</span>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="body"
+            id="operations-filters"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="filter-panel__body"
+          >
+            <div className="filter-grid">
+              <label className="field field--date-range">
+                <span>Date Range</span>
+                <div className="date-range">
+                  <input
+                    type="date"
+                    value={filters.dateFrom}
+                    min={options.minDate || undefined}
+                    max={filters.dateTo || options.maxDate || undefined}
+                    onChange={(event) => {
+                      onChange({ ...filters, dateFrom: event.target.value });
+                    }}
+                    aria-label="Start date"
+                  />
+                  <span className="date-range__separator" aria-hidden="true">→</span>
+                  <input
+                    type="date"
+                    value={filters.dateTo}
+                    min={filters.dateFrom || options.minDate || undefined}
+                    max={options.maxDate || undefined}
+                    onChange={(event) => {
+                      onChange({ ...filters, dateTo: event.target.value });
+                    }}
+                    aria-label="End date"
+                  />
+                  {(filters.dateFrom || filters.dateTo) ? (
+                    <button
+                      type="button"
+                      className="date-range__clear"
+                      title="Clear date range"
+                      aria-label="Clear date range"
+                      onClick={() => {
+                        onChange({ ...filters, dateFrom: "", dateTo: "" });
+                      }}
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </div>
+                <small className={`field__hint ${dateRangeInvalid ? "field__hint--error" : ""}`}>{dateHint}</small>
+              </label>
 
-      <div className="filter-actions">
-        <button type="button" className="btn btn--primary" onClick={onApply} disabled={dateRangeInvalid}>Apply Filters</button>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={onLatestData}
-          title="Synchronize the Date Range with the latest date available in the live Google Sheet"
-        >
-          {autoDateMode ? "● Latest Available Data" : "Latest Available Data"}
-        </button>
-        <button type="button" className="btn btn--ghost" onClick={onReset}>Reset</button>
-      </div>
-      </div>
-      )}
+              <label className="field">
+                <span>Period</span>
+                <select
+                  value={filters.period}
+                  onChange={(event) => onChange({ ...filters, period: event.target.value as PeriodPreset })}
+                  aria-label="Filter by period"
+                >
+                  {periodOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              {selectFields.map((field) => {
+                const unavailable = field.options.length === 2 && field.options[1] === "Not available in dataset";
+                return (
+                  <label key={field.key} className="field">
+                    <span>{field.label}</span>
+                    <select
+                      value={filters[field.key]}
+                      onChange={(event) => update(field.key, event.target.value)}
+                      disabled={unavailable}
+                    >
+                      {field.options.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="filter-actions">
+              <motion.button
+                type="button"
+                className="btn btn--primary"
+                onClick={onApply}
+                disabled={dateRangeInvalid}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                transition={springMicro}
+              >
+                Apply Filters
+              </motion.button>
+              <motion.button
+                type="button"
+                className="btn btn--ghost"
+                onClick={onLatestData}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                transition={springMicro}
+                title="Synchronize the Date Range with the latest date available in the live Google Sheet"
+              >
+                {autoDateMode ? "● Latest Available Data" : "Latest Available Data"}
+              </motion.button>
+              <motion.button
+                type="button"
+                className="btn btn--ghost"
+                onClick={onReset}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                transition={springMicro}
+              >
+                Reset
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
@@ -2356,11 +2396,14 @@ export function ManufacturingDashboard() {
 
         <nav className="sidebar__nav" aria-label="Sidebar navigation">
           {navItems.map((item) => (
-            <button
+            <motion.button
               key={item.key}
               type="button"
               className={`nav-item ${activePage === item.key ? "nav-item--active" : ""}`}
               title={item.label}
+              whileHover={{ x: 2 }}
+              whileTap={{ scale: 0.98 }}
+              transition={springMicro}
               onClick={() => {
                 window.location.hash = `#/${item.key}`;
                 setActivePage(item.key);
@@ -2371,7 +2414,7 @@ export function ManufacturingDashboard() {
             >
               <span className="nav-item__icon">{item.icon}</span>
               {!sidebarCollapsed && <span className="nav-item__label">{item.label}</span>}
-            </button>
+            </motion.button>
           ))}
         </nav>
 
@@ -2511,16 +2554,19 @@ export function ManufacturingDashboard() {
               </span>
             </div>
             <div className="live-status-strip__action">
-              <button
+              <motion.button
                 type="button"
                 className="live-status-strip__refresh-btn"
                 onClick={() => void refreshData()}
                 disabled={liveStatus.state === "syncing" || googleSheetsLoading}
                 title="Refresh live Google Sheets data"
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                transition={springMicro}
               >
                 <span className={liveStatus.state === "syncing" || googleSheetsLoading ? "exec-spin" : ""} aria-hidden="true">↻</span>
                 <span>{liveStatus.state === "syncing" || googleSheetsLoading ? "Refreshing..." : "Refresh"}</span>
-              </button>
+              </motion.button>
             </div>
           </div>
         )}
@@ -2671,14 +2717,7 @@ export function ManufacturingDashboard() {
                 onSlideChange={setLiveActiveSlideId}
               />
             ) : liveLoading ? (
-              <div className="live-empty-state" role="status" aria-live="polite">
-                <div className="live-empty-state__icon live-empty-state__icon--loading" aria-hidden="true">↻</div>
-                <h3>Loading Live Google Sheets Data…</h3>
-                <p>
-                  Fetching the live manufacturing dataset from the backend. Large sheets
-                  can take a few seconds — analytics appear as soon as the data arrives.
-                </p>
-              </div>
+              <DashboardLoadingSkeleton />
             ) : (
               <div className="live-empty-state" role="alert">
                 <div className="live-empty-state__icon">⚠</div>

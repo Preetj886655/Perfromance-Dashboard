@@ -2486,3 +2486,198 @@ html, body, #root, .factory-layout {
   width: 100% !important;
 }
 
+/* =========================================================================
+   DASHBOARD SKELETON & ENTERPRISE SHIMMER STYLES
+   ========================================================================= */
+
+@keyframes shimmerPulse {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.dashboard-skeleton-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  margin-top: 0.5rem;
+  box-sizing: border-box;
+}
+
+.skeleton-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-left: 4px solid #2563EB;
+  border-radius: 10px;
+  padding: 0.875rem 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.skeleton-banner__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #DBEAFE;
+  border-top-color: #2563EB;
+  border-radius: 50%;
+  animation: rotate 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.skeleton-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.skeleton-banner__text strong {
+  font-size: 0.875rem;
+  color: #0F172A;
+  font-weight: 600;
+}
+
+.skeleton-banner__text span {
+  font-size: 0.775rem;
+  color: #64748B;
+}
+
+.skeleton-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.875rem;
+}
+
+@media (max-width: 1200px) {
+  .skeleton-kpi-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .skeleton-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-kpi-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.skeleton-box {
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background-size: 200% 100%;
+  animation: shimmerPulse 2s infinite ease-in-out;
+  border-radius: 6px;
+}
+
+.skeleton-box--icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.skeleton-box--label {
+  height: 12px;
+  width: 90px;
+}
+
+.skeleton-kpi-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.skeleton-box--val {
+  height: 24px;
+  width: 70%;
+  margin-top: 0.25rem;
+}
+
+.skeleton-box--subval {
+  height: 10px;
+  width: 50%;
+  margin-top: 0.35rem;
+}
+
+.skeleton-box--target {
+  height: 11px;
+  width: 40%;
+  margin-top: auto;
+}
+
+.skeleton-horizons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 960px) {
+  .skeleton-horizons-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-chart-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.skeleton-chart-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.skeleton-box--title {
+  height: 16px;
+  width: 140px;
+}
+
+.skeleton-box--subtitle {
+  height: 11px;
+  width: 210px;
+}
+
+.skeleton-chart-card__body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem 0;
+  border-bottom: 1px dashed #E2E8F0;
+}
+
+.skeleton-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.25rem;
+  width: 85%;
+  height: 100%;
+}
+
+.skeleton-bar {
+  flex: 1;
+  background: linear-gradient(180deg, #E2E8F0 0%, #F1F5F9 100%);
+  border-radius: 4px 4px 0 0;
+  animation: pulse 2.2s infinite ease-in-out;
+}
+
+
