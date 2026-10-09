@@ -5,6 +5,7 @@ import {
   buildFilterOptions,
   collectMachines,
   defaultFilters,
+  getCurrentYearStartDate,
   normalizeMachine,
   type FilterState,
 } from "./dashboardFilterEngine";
@@ -136,5 +137,65 @@ describe("Dashboard Filter Engine — Machine Filter Integration", () => {
     expect(filtered.length).toBe(1);
     expect(filtered[0].lineName).toBe("ERC");
     expect(filtered[0].machineName).toBe("Line 1");
+  });
+});
+
+describe("Dashboard Filter Engine — Default Date Range Integration", () => {
+  it("computes current year start date (YYYY-01-01) dynamically", () => {
+    const res = getCurrentYearStartDate("2024-08-31", "2026-10-09");
+    expect(res).toBe("2026-01-01");
+  });
+
+  it("returns minDate if dataset starts after Jan 1 of current year", () => {
+    const res = getCurrentYearStartDate("2026-03-15", "2026-10-09");
+    expect(res).toBe("2026-03-15");
+  });
+
+  it("falls back to minDate if dataset is purely historical (ends before current year)", () => {
+    const res = getCurrentYearStartDate("2024-01-01", "2024-12-31");
+    expect(res).toBe("2024-01-01");
+  });
+
+  it("returns empty string if maxDate is missing or empty", () => {
+    expect(getCurrentYearStartDate("", "")).toBe("");
+    expect(getCurrentYearStartDate(undefined, undefined)).toBe("");
+  });
+
+  it("buildFilterOptions includes defaultDateFrom pointing to current year start", () => {
+    const records: DprRecord[] = [
+      makeMockRecord({ index: 1, date: "2024-08-31" }),
+      makeMockRecord({ index: 2, date: "2026-10-09" }),
+    ];
+    const options = buildFilterOptions(records);
+    expect(options.minDate).toBe("2024-08-31");
+    expect(options.maxDate).toBe("2026-10-09");
+    expect(options.defaultDateFrom).toBe("2026-01-01");
+  });
+
+  it("allows user to filter across historical data without restriction", () => {
+    const records: DprRecord[] = [
+      makeMockRecord({ index: 1, date: "2024-09-15", actualProductionQty: 100 }),
+      makeMockRecord({ index: 2, date: "2025-06-20", actualProductionQty: 200 }),
+      makeMockRecord({ index: 3, date: "2026-04-10", actualProductionQty: 300 }),
+    ];
+
+    // Default current year filter (2026-01-01 -> 2026-10-09)
+    const currentYearFilter: FilterState = {
+      ...defaultFilters,
+      dateFrom: "2026-01-01",
+      dateTo: "2026-10-09",
+    };
+    const currentYearRecords = applyFilters(records, currentYearFilter);
+    expect(currentYearRecords.length).toBe(1);
+    expect(currentYearRecords[0].index).toBe(3);
+
+    // Custom historical filter (full history)
+    const historicalFilter: FilterState = {
+      ...defaultFilters,
+      dateFrom: "2024-09-01",
+      dateTo: "2026-10-09",
+    };
+    const historicalRecords = applyFilters(records, historicalFilter);
+    expect(historicalRecords.length).toBe(3);
   });
 });

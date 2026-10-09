@@ -844,14 +844,22 @@ function getInitialAutoDateMode(): boolean {
 function getInitialLiveFilters(): FilterState {
   if (typeof window === "undefined") return defaultFilters;
   try {
+    const isAutoMode = sessionStorage.getItem(AUTO_DATE_MODE_STORAGE_KEY) !== "false";
     const saved = sessionStorage.getItem(LIVE_FILTER_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && typeof parsed === "object" && "period" in parsed) {
-        return {
+        const filters: FilterState = {
           ...defaultFilters,
           ...parsed,
         };
+        // When in autoDateMode, do not retain stale historical start dates (e.g. 2024-08-31)
+        // so the fresh load defaults to the current calendar year upon data sync
+        if (isAutoMode) {
+          filters.dateFrom = "";
+          filters.dateTo = "";
+        }
+        return filters;
       }
     }
   } catch {
@@ -1282,6 +1290,7 @@ export function ManufacturingDashboard() {
   const handleLiveDraftChange = useCallback(
     (next: FilterState) => {
       const currentMax = liveFilterOptions.maxDate;
+      const defaultStart = liveFilterOptions.defaultDateFrom || liveFilterOptions.minDate;
       if (next.dateTo && currentMax && next.dateTo < currentMax) {
         // User explicitly picked a past end date (custom range protection)
         isCustomEndDateRef.current = true;
@@ -1290,23 +1299,24 @@ export function ManufacturingDashboard() {
         // User picked the latest available date
         isCustomEndDateRef.current = false;
       }
-      if (next.dateFrom && next.dateFrom !== liveFilterOptions.minDate) {
+      if (next.dateFrom && next.dateFrom !== defaultStart) {
         setAutoDateMode(false);
       }
       setLiveDraftFilters(next);
     },
-    [liveFilterOptions.maxDate, liveFilterOptions.minDate],
+    [liveFilterOptions.maxDate, liveFilterOptions.defaultDateFrom, liveFilterOptions.minDate],
   );
 
   /**
    * "Latest Available Data": return to automatic mode and synchronize the
-   * Date Range with the full live source range (min → latest source date).
+   * Date Range with the default current year live source range (defaultDateFrom → latest source date).
    */
   const handleLatestAvailableData = useCallback(() => {
     const options = liveDataset ? liveFilterOptions : filterOptions;
+    const defaultStart = options.defaultDateFrom || options.minDate;
     const latestFilters: FilterState = {
       ...liveDraftFilters,
-      dateFrom: options.minDate,
+      dateFrom: defaultStart,
       dateTo: options.maxDate,
     };
     isCustomEndDateRef.current = false;
@@ -1320,19 +1330,22 @@ export function ManufacturingDashboard() {
    *
    * Automatically advances dateTo whenever the Google Sheet grows and exposes a
    * newer maxSourceDate:
-   * - If dateTo was tracking the latest date (or equal to previous max date, or
-   *   stale 2026-09-03 from sessionStorage, or autoDateMode), advance to new maxDate.
-   * - The user's custom dateFrom (e.g. 2026-01-01) is PRESERVED.
+   * - If dateTo was tracking the latest date (or equal to previous max date,
+   *   or autoDateMode), advance to new maxDate.
+   * - In autoDateMode, sets dateFrom to defaultDateFrom (Jan 1 of current year).
+   * - The user's custom dateFrom (e.g. 2024-08-31) is PRESERVED when autoDateMode is false.
    * - If the user deliberately selected a past date range (dateTo < prevMax),
    *   their custom range is PROTECTED and never overwritten.
    * - If dateTo > newMax, it is clamped to newMax.
    */
   useEffect(() => {
-    const { minDate, maxDate } = liveFilterOptions;
+    const { minDate, maxDate, defaultDateFrom } = liveFilterOptions;
     if (!maxDate) return;
 
     const prevMax = previousMaxDateRef.current;
     previousMaxDateRef.current = maxDate;
+
+    const targetDateFrom = defaultDateFrom || minDate;
 
     setLiveDraftFilters((prev) => {
       let nextDateTo = prev.dateTo;
@@ -1343,7 +1356,6 @@ export function ManufacturingDashboard() {
         autoDateMode ||
         !isCustomEndDateRef.current ||
         prev.dateTo === prevMax ||
-        prev.dateTo === "2026-09-03" ||
         prev.dateTo > maxDate;
 
       if (shouldAdvanceToMax) {
@@ -1351,7 +1363,7 @@ export function ManufacturingDashboard() {
       }
 
       if (autoDateMode) {
-        nextDateFrom = minDate;
+        nextDateFrom = targetDateFrom;
       }
 
       if (nextDateTo === prev.dateTo && nextDateFrom === prev.dateFrom) {
@@ -1369,7 +1381,6 @@ export function ManufacturingDashboard() {
         autoDateMode ||
         !isCustomEndDateRef.current ||
         prev.dateTo === prevMax ||
-        prev.dateTo === "2026-09-03" ||
         prev.dateTo > maxDate;
 
       if (shouldAdvanceToMax) {
@@ -1377,7 +1388,7 @@ export function ManufacturingDashboard() {
       }
 
       if (autoDateMode) {
-        nextDateFrom = minDate;
+        nextDateFrom = targetDateFrom;
       }
 
       if (nextDateTo === prev.dateTo && nextDateFrom === prev.dateFrom) {
@@ -2648,10 +2659,11 @@ export function ManufacturingDashboard() {
                 autoDateMode={autoDateMode}
                 onReset={() => {
                   const options = liveDataset ? liveFilterOptions : filterOptions;
+                  const defaultStart = options.defaultDateFrom || options.minDate;
                   const resetFilters: FilterState = {
                     ...defaultFilters,
                     period: "monthly",
-                    dateFrom: options.minDate,
+                    dateFrom: defaultStart,
                     dateTo: options.maxDate,
                   };
                   isCustomEndDateRef.current = false;
@@ -2693,10 +2705,11 @@ export function ManufacturingDashboard() {
                 hideTopBanners={true}
                 onApplyFilters={() => setLiveAppliedFilters(liveDraftFilters)}
                 onResetFilters={() => {
+                  const defaultStart = liveFilterOptions.defaultDateFrom || liveFilterOptions.minDate;
                   const resetFilters: FilterState = {
                     ...defaultFilters,
                     period: "monthly",
-                    dateFrom: liveFilterOptions.minDate,
+                    dateFrom: defaultStart,
                     dateTo: liveFilterOptions.maxDate,
                   };
                   isCustomEndDateRef.current = false;

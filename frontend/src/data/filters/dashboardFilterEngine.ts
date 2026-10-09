@@ -125,11 +125,48 @@ export function datasetDateBounds(records: DprRecord[]): { minDate: string; maxD
   };
 }
 
+/**
+ * Compute the default starting date for the current calendar year.
+ * Returns `${year}-01-01` where year is the current calendar year,
+ * bounded safely by dataset minDate and maxDate.
+ *
+ * Rules:
+ * 1. Returns empty string if maxDate is missing or empty.
+ * 2. Default target is Jan 1 of the current calendar year (YYYY-01-01).
+ * 3. If the latest data year is newer than system calendar year (system clock lagging),
+ *    aligns with the data's latest year.
+ * 4. If minDate is later than Jan 1 (e.g. dataset begins later in the year),
+ *    clamps to minDate.
+ * 5. If maxDate is earlier than Jan 1 (e.g. historical archive dataset ending before this year),
+ *    falls back to minDate so the dataset is not completely filtered out.
+ */
+export function getCurrentYearStartDate(minDate?: string, maxDate?: string): string {
+  if (!maxDate) return "";
+  const currentYear = new Date().getFullYear();
+  let targetYear = currentYear;
+  if (/^\d{4}/.test(maxDate)) {
+    const dataYear = parseInt(maxDate.slice(0, 4), 10);
+    if (dataYear > currentYear) {
+      targetYear = dataYear;
+    }
+  }
+  const yearStart = `${targetYear}-01-01`;
+  if (minDate && yearStart < minDate) {
+    return minDate;
+  }
+  if (yearStart > maxDate) {
+    return minDate || yearStart;
+  }
+  return yearStart;
+}
+
 export type FilterOptions = {
   /** Earliest date in the dataset (ISO), empty when the dataset has no dates. */
   minDate: string;
   /** Latest date in the dataset (ISO) — the dynamic latestSourceDate. */
   maxDate: string;
+  /** Default start date for the current calendar year (ISO), bounded by dataset. */
+  defaultDateFrom: string;
   /** Business line labels present in the dataset (business lines first). */
   lines: string[];
   /** Fixed two-shift business model: Day (A), Night (B). */
@@ -150,6 +187,7 @@ export type FilterOptions = {
 
 export function buildFilterOptions(records: DprRecord[]): FilterOptions {
   const { minDate, maxDate } = datasetDateBounds(records);
+  const defaultDateFrom = getCurrentYearStartDate(minDate, maxDate);
 
   // Lines: business lines (in approved order) are always shown so the dropdown
   // always presents the full business taxonomy even when the current dataset
@@ -212,6 +250,7 @@ export function buildFilterOptions(records: DprRecord[]): FilterOptions {
   return {
     minDate,
     maxDate,
+    defaultDateFrom,
     lines,
     shifts: [...BUSINESS_SHIFTS],
     materials: [...businessMaterialsPresent, ...extraMaterials],
