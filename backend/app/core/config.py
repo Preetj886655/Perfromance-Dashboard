@@ -37,6 +37,31 @@ class Settings(BaseSettings):
     google_sheets_default_worksheet: str = "Sheet1"
     google_sheets_cache_ttl_seconds: int = 45
 
+    maintenance_spreadsheet_id: str = "1u4ZaYcrJym_wbDpNE0iHdXBcGJOR1kLww7G6XwOSrWs"
+    maintenance_worksheet_name: str = "Beakdown"
+
+    # ERC Mk-V Line Tracker configuration (local Excel file or Google Sheets)
+    line_tracker_local_path: str = r"C:\Users\Preet Jaiswal\Downloads\ERC_MkV_Line_Tracker R0_10102026.xlsx"
+    # Live source spreadsheet (the ".xlsx" in the repo is a DOWNLOAD of this Google Sheet).
+    line_tracker_spreadsheet_id: str = "1axzlqa-0nga1nnLSOZ1HQpjFZzx1kUlQ-KrqJgblw-s"
+    line_tracker_worksheet_name: str = ""
+    # "local_excel" (default, uses the downloaded .xlsx, no Google calls) or
+    # "google_sheets" (reads the live Google Sheet via the service account, falls back
+    # to local Excel automatically if the sheet can't be fetched).
+    line_tracker_source: str = "local_excel"
+    line_tracker_cache_ttl_seconds: int = 300
+
+    # AI Chatbot configuration
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-20b"
+    openai_api_key: str = ""
+    hf_token: str = ""
+    hf_router_url: str = "https://router.huggingface.co/v1"
+    chat_provider: str = "auto"  # "auto", "groq", "hf", "openai", "deterministic"
+    chat_model: str = "openai/gpt-oss-120b"
+    chat_fallback_enabled: bool = True
+    chat_timezone: str = "Asia/Kolkata"
+
     # Google Sheets service-account credential (file path or inline JSON).
     # Can be set via env var GOOGLE_SERVICE_ACCOUNT_JSON or in .env file.
     google_service_account_json: str = ""

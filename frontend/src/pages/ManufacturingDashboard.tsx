@@ -61,6 +61,22 @@ import { LiveGoogleSheetsSection } from "../components/dashboard/LiveGoogleSheet
 import { motion, AnimatePresence } from "motion/react";
 import { springMicro } from "../styles/motionVariants";
 import { DashboardLoadingSkeleton } from "../components/common/DashboardSkeleton";
+import { MaintenanceDashboard } from "../components/maintenance/MaintenanceDashboard";
+import { LineTrackerView } from "../components/lineTracker/LineTrackerView";
+import { LineTrackerWorksheetPage } from "../components/lineTracker/LineTrackerWorksheetPage";
+import { ProductionOrderAnalyticsPage } from "../components/lineTracker/ProductionOrderAnalyticsPage";
+import { MonthlyOrderPlanPage } from "../components/lineTracker/MonthlyOrderPlanPage";
+import { RmHeatPlanAnalyticsPage } from "../components/lineTracker/RmHeatPlanAnalyticsPage";
+import { HeatLotReferencePage } from "../components/lineTracker/HeatLotReferencePage";
+import { MachineAssetsPage } from "../components/lineTracker/MachineAssetsPage";
+import { ShiftManpowerAnalyticsPage } from "../components/lineTracker/ShiftManpowerAnalyticsPage";
+import { DashboardAnalyticsPage } from "../components/lineTracker/DashboardAnalyticsPage";
+import { ReliabilityAnalyticsPage } from "../components/lineTracker/ReliabilityAnalyticsPage";
+import { ChatButton } from "../components/chat/ChatButton";
+import { ChatPanel } from "../components/chat/ChatPanel";
+import { parseLineTrackerWorksheetRoute } from "../services/lineTrackerWorksheetRoutes";
+
+const DEFAULT_GOOGLE_SHEET_WORKSHEET = "Downtime Log";
 
 // ===== DATA SOURCE TYPES =====
 // Strict separation: imported vs live Google Sheets
@@ -99,6 +115,8 @@ type ImportedDatasetState = {
 
 type PageRoute =
   | "dashboard"
+  | "line-tracker"
+  | "worksheet"
   | "production"
   | "oee"
   | "quality"
@@ -129,6 +147,7 @@ type KpiPoint = {
 
 const navItems = [
   { key: "dashboard", label: "Overview", icon: "◉" },
+  { key: "line-tracker", label: "ERC Mk-V Tracker", icon: "⚡" },
   { key: "production", label: "Production", icon: "▣" },
   { key: "quality", label: "Quality", icon: "◌" },
   { key: "ppc", label: "PPC", icon: "▤" },
@@ -149,6 +168,8 @@ const navItems = [
 
 const routeToTitle: Record<PageRoute, string> = {
   dashboard: "Overall Manufacturing Dashboard",
+  "line-tracker": "ERC Mk-V Line Tracker",
+  worksheet: "ERC Mk-V Worksheet",
   production: "Production Dashboard",
   oee: "OEE Dashboard",
   quality: "Quality Dashboard",
@@ -167,6 +188,7 @@ const routeToTitle: Record<PageRoute, string> = {
   actions: "Top 10 Pending Actions",
   settings: "Dashboard Settings",
 };
+
 
 // defaultFilters now lives in the shared filter engine (Stage-aware).
 
@@ -296,6 +318,7 @@ const pendingActions = [
 
 function resolveHashRoute(): PageRoute {
   const hash = typeof window === "undefined" ? "" : window.location.hash;
+  if (parseLineTrackerWorksheetRoute(hash)) return "worksheet";
   const map: Record<string, PageRoute> = {
     "#/dashboard": "dashboard",
     "#/production": "production",
@@ -319,6 +342,21 @@ function resolveHashRoute(): PageRoute {
   };
   return map[hash] ?? "dashboard";
 }
+
+function resolveWorksheetKey(): string | null {
+  const hash = typeof window === "undefined" ? "" : window.location.hash;
+  return parseLineTrackerWorksheetRoute(hash)?.worksheetKey ?? null;
+}
+
+const ANALYTICS_MODULES = [
+  { key: "summary", label: "Executive & Summary Analytics", detail: "Summary + Production Dashboard" },
+  { key: "production-order", label: "Orders & Monthly Dispatch Plan", detail: "Production Order + Order Plan" },
+  { key: "rm-heat-plan-vs-actual", label: "Raw Material Heats & Lot Traceability", detail: "Heat plan + lot reference" },
+  { key: "dashboard", label: "Line Capacity, Machine Master & Consumables", detail: "Capacity + machine assets" },
+  { key: "entries", label: "Live Shop-Floor Entries & Quality", detail: "Entries and rejection analytics" },
+  { key: "manpower-summary", label: "Shift Manpower Analytics", detail: "Planned vs actual headcount" },
+  { key: "downtime-analysis", label: "Downtime Pareto, OEE & Reliability", detail: "Downtime + OEE + MTBF / MTTR" },
+] as const;
 
 function getTrendPath(values: number[]) {
   const safeValues = values.length > 0 ? values : [0];
@@ -904,15 +942,19 @@ const STUB_ROUTES: PageRoute[] = [
 export function ManufacturingDashboard() {
   const { logout } = useAuth();
   const [activePage, setActivePage] = useState<PageRoute>(resolveHashRoute());
+  const [activeWorksheetKey, setActiveWorksheetKey] = useState<string | null>(resolveWorksheetKey);
   const [liveActiveSlideId, setLiveActiveSlideId] = useState<string>(() => mapRouteToSlideId(resolveHashRoute()));
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState<boolean>(false);
   const [activeSlide, setActiveSlide] = useState<DashboardSlideKey | null>(() => {
     const hash = typeof window === "undefined" ? "" : window.location.hash;
     if (hash === "#/data-quality") return "data-quality";
     const page = resolveHashRoute();
     return page === "data-import" ? "data-import" : dashboardSlides.find((slide) => slide.page === page)?.key ?? null;
   });
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+
   // ===== STRICT DATA SOURCE SEPARATION =====
   // Imported dataset (Excel/CSV) and Live Google Sheets are COMPLETELY SEPARATE.
   // They never mix, never overwrite each other, and never share state.
@@ -978,6 +1020,7 @@ export function ManufacturingDashboard() {
     const onHashChange = () => {
       const route = resolveHashRoute();
       setActivePage(route);
+      setActiveWorksheetKey(resolveWorksheetKey());
       setLiveActiveSlideId(mapRouteToSlideId(route));
     };
     window.addEventListener("hashchange", onHashChange);
@@ -1030,6 +1073,7 @@ export function ManufacturingDashboard() {
     updateAvailable: false,
   });
   const [currentSpreadsheetId, setCurrentSpreadsheetId] = useState<string>('');
+  const [currentWorksheet, setCurrentWorksheet] = useState<string>(DEFAULT_GOOGLE_SHEET_WORKSHEET);
 
   /**
    * Guard so only the LATEST bootstrap run may apply state. React StrictMode
@@ -1083,6 +1127,7 @@ export function ManufacturingDashboard() {
     // Setting the spreadsheet id also enables the manual Refresh control and
     // the (optional) polling hook, and triggers the dataset load below.
     setCurrentSpreadsheetId(status.spreadsheetId);
+    setCurrentWorksheet(status.worksheet || DEFAULT_GOOGLE_SHEET_WORKSHEET);
   }, []);
 
   // Fetch backend Google Sheets configuration on mount to enable live polling
@@ -1105,9 +1150,17 @@ export function ManufacturingDashboard() {
     let data: ManufacturingApiResponse | null = null;
     let lastError = "Unable to load the live dataset.";
 
+    let liveWorksheet = DEFAULT_GOOGLE_SHEET_WORKSHEET;
+    try {
+      const statusResponse = await fetchManufacturingStatus(spreadsheetId);
+      liveWorksheet = statusResponse.worksheet || liveWorksheet;
+    } catch {
+      // Fall back to the configured default worksheet name when the status probe fails.
+    }
+
     for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
       try {
-        data = await fetchManufacturingDataset(spreadsheetId, "Sheet1");
+        data = await fetchManufacturingDataset(spreadsheetId, liveWorksheet);
         break;
       } catch (err) {
         lastError = err instanceof Error ? err.message : "Dataset request failed.";
@@ -1117,11 +1170,13 @@ export function ManufacturingDashboard() {
 
     if (data && data.connectionStatus === "connected" && data.data.length > 0) {
       const records = normalizeGoogleSheetRecords(data.data);
+      const resolvedWorksheet = data.worksheet || liveWorksheet || DEFAULT_GOOGLE_SHEET_WORKSHEET;
       // STRICT SEPARATION: Only update liveDataset, never uploadedDataset.
+      setCurrentWorksheet(resolvedWorksheet);
       setLiveDataset({
         records,
         spreadsheetId,
-        worksheet: data.worksheet || "Sheet1",
+        worksheet: resolvedWorksheet,
         recordCount: records.length,
         lastUpdated: data.lastUpdated,
         connectionStatus: "connected",
@@ -1131,7 +1186,7 @@ export function ManufacturingDashboard() {
       setGoogleSheetsStatus({
         connected: true,
         source: "google-sheets",
-        worksheet: data.worksheet || "Sheet1",
+        worksheet: resolvedWorksheet,
         recordCount: records.length,
         lastUpdated: data.lastUpdated,
         error: null,
@@ -1166,6 +1221,7 @@ export function ManufacturingDashboard() {
     const sync = () => {
       const page = resolveHashRoute();
       setActivePage(page);
+      setActiveWorksheetKey(resolveWorksheetKey());
       const hash = typeof window === "undefined" ? "" : window.location.hash;
       const nextSlide =
         hash === "#/data-quality"
@@ -1193,7 +1249,7 @@ export function ManufacturingDashboard() {
   // Set up live polling when Google Sheets is connected and auto-refresh is enabled
   const { refresh: refreshData } = useManufacturingLivePolling({
     spreadsheetId: currentSpreadsheetId,
-    worksheet: "Sheet1",
+    worksheet: currentWorksheet,
     pollingInterval,
     enabled: autoRefreshEnabled && currentSpreadsheetId.length > 0,
     onDataUpdate: (response) => {
@@ -1203,10 +1259,12 @@ export function ManufacturingDashboard() {
       // data can never override a successful live refresh.
       if (response.connectionStatus === "connected" && response.data && response.data.length > 0) {
         const records = normalizeGoogleSheetRecords(response.data);
+        const resolvedWorksheet = response.worksheet || currentWorksheet || DEFAULT_GOOGLE_SHEET_WORKSHEET;
+        setCurrentWorksheet(resolvedWorksheet);
         setLiveDataset({
           records,
           spreadsheetId: response.spreadsheetId || currentSpreadsheetId,
-          worksheet: response.worksheet || "Sheet1",
+          worksheet: resolvedWorksheet,
           recordCount: records.length,
           lastUpdated: response.lastUpdated,
           connectionStatus: "connected",
@@ -1215,7 +1273,7 @@ export function ManufacturingDashboard() {
         setGoogleSheetsStatus({
           connected: true,
           source: "google-sheets",
-          worksheet: response.worksheet || "Sheet1",
+          worksheet: resolvedWorksheet,
           recordCount: records.length,
           lastUpdated: response.lastUpdated,
           error: null,
@@ -1226,7 +1284,7 @@ export function ManufacturingDashboard() {
         const records = normalizeGoogleSheetRecords(response.data);
         const updatedPayload: DashboardDatasetState = {
           fileName: `Google Sheets (${currentSpreadsheetId})`,
-          sheetName: response.worksheet || "Sheet1",
+          sheetName: response.worksheet || currentWorksheet || DEFAULT_GOOGLE_SHEET_WORKSHEET,
           uploadedAt: response.lastUpdated ? new Date(response.lastUpdated).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
           recordCount: response.recordCount,
           records,
@@ -1700,7 +1758,7 @@ export function ManufacturingDashboard() {
       setGoogleSheetsStatus({
         connected: false,
         source: "google-sheets",
-        worksheet: "Sheet1",
+        worksheet: DEFAULT_GOOGLE_SHEET_WORKSHEET,
         recordCount: 0,
         lastUpdated: null,
         error: "Enter a Google Sheets URL or spreadsheet ID first.",
@@ -1710,18 +1768,19 @@ export function ManufacturingDashboard() {
 
     const match = rawUrl.match(/[a-zA-Z0-9-_]{10,}/);
     const spreadsheetId = match ? match[0] : rawUrl;
+    const worksheetName = DEFAULT_GOOGLE_SHEET_WORKSHEET;
 
     setGoogleSheetsLoading(true);
     setPreviewError(null);
 
     try {
-      const response = await fetchManufacturingDataset(spreadsheetId, "Sheet1");
+      const response = await fetchManufacturingDataset(spreadsheetId, worksheetName);
       const connected = response.connectionStatus === "connected" && !response.error;
 
       setGoogleSheetsStatus({
         connected,
         source: response.source,
-        worksheet: response.worksheet || "Sheet1",
+        worksheet: response.worksheet || worksheetName,
         recordCount: response.recordCount,
         lastUpdated: response.lastUpdated,
         error: response.error,
@@ -1749,12 +1808,12 @@ export function ManufacturingDashboard() {
         setUploadedDataset({
           records,
           fileName: spreadsheetId,
-          sheetName: response.worksheet || "Sheet1",
+          sheetName: response.worksheet || worksheetName,
           recordCount: records.length,
           uploadedAt: connectedAt,
           sourceType: "google-sheets",
           spreadsheetId,
-          worksheet: response.worksheet || "Sheet1",
+          worksheet: response.worksheet || worksheetName,
           lastUpdated: connectedAt,
         });
 
@@ -1776,7 +1835,7 @@ export function ManufacturingDashboard() {
       setGoogleSheetsStatus({
         connected: false,
         source: "google-sheets",
-        worksheet: "Sheet1",
+        worksheet: DEFAULT_GOOGLE_SHEET_WORKSHEET,
         recordCount: 0,
         lastUpdated: null,
         error: error instanceof Error ? error.message : "Unable to connect to Google Sheets.",
@@ -2410,7 +2469,7 @@ export function ManufacturingDashboard() {
             <motion.button
               key={item.key}
               type="button"
-              className={`nav-item ${activePage === item.key ? "nav-item--active" : ""}`}
+              className={`nav-item ${activePage === item.key || (item.key === "line-tracker" && activePage === "worksheet") ? "nav-item--active" : ""}`}
               title={item.label}
               whileHover={{ x: 2 }}
               whileTap={{ scale: 0.98 }}
@@ -2427,6 +2486,28 @@ export function ManufacturingDashboard() {
               {!sidebarCollapsed && <span className="nav-item__label">{item.label}</span>}
             </motion.button>
           ))}
+          <div className="worksheet-nav" role="group" aria-label="ERC Mk-V Analytics Modules">
+            {!sidebarCollapsed && <div className="worksheet-nav__heading">ERC Mk-V ANALYTICS MODULES</div>}
+            {ANALYTICS_MODULES.map((module) => (
+              <button
+                key={module.key}
+                type="button"
+                className={`nav-item worksheet-nav__item ${activeWorksheetKey === module.key ? "nav-item--active" : ""}`}
+                title={`${module.label} — ${module.detail}`}
+                aria-current={activeWorksheetKey === module.key ? "page" : undefined}
+                onClick={() => {
+                  window.location.hash = `#/line-tracker/worksheet/${module.key}`;
+                  setActivePage("worksheet");
+                  setActiveWorksheetKey(module.key);
+                  setActiveSlide(null);
+                  setMobileMenuOpen(false);
+                }}
+              >
+                <span className="worksheet-nav__item-icon" aria-hidden="true">▦</span>
+                {!sidebarCollapsed && <span className="nav-item__label">{module.label}</span>}
+              </button>
+            ))}
+          </div>
         </nav>
 
         <div className="sidebar__footer">
@@ -2489,7 +2570,7 @@ export function ManufacturingDashboard() {
             {liveDataset?.connectionStatus === "connected" ? (
               <div className="exec-header__status-badge exec-header__status-badge--live">
                 <span className="exec-header__dot exec-header__dot--live" aria-hidden="true" />
-                <span>● LIVE GOOGLE SHEETS</span>
+                <span>● DATA CONNECTED</span>
               </div>
             ) : liveDataset?.connectionStatus === "error" || liveStatus.state === "error" ? (
               <div className="exec-header__status-badge exec-header__status-badge--error">
@@ -2619,6 +2700,51 @@ export function ManufacturingDashboard() {
               </div>
             )}
           </>
+        ) : activePage === "line-tracker" ? (
+          <LineTrackerView />
+        ) : activePage === "worksheet" ? (
+          activeWorksheetKey ? (
+            activeWorksheetKey === "rm-heat-plan-vs-actual" ? (
+              <RmHeatPlanAnalyticsPage key={activeWorksheetKey} />
+            ) : activeWorksheetKey === "heat-lot-number-reference" ? (
+              <HeatLotReferencePage key={activeWorksheetKey} />
+            ) : activeWorksheetKey === "machine-master" ||
+              activeWorksheetKey === "machine-consumables" ||
+              activeWorksheetKey === "capacity-change-log" ||
+              activeWorksheetKey === "planned-shutdowns" ? (
+              <MachineAssetsPage key={activeWorksheetKey} pageKey={activeWorksheetKey} />
+            ) : activeWorksheetKey === "entries" ||
+              activeWorksheetKey === "manpower-summary" ? (
+              <ShiftManpowerAnalyticsPage
+                key={activeWorksheetKey}
+                pageKey={activeWorksheetKey}
+              />
+            ) : activeWorksheetKey === "production-dashboard" ||
+              activeWorksheetKey === "dashboard" ||
+              activeWorksheetKey === "summary" ? (
+              <DashboardAnalyticsPage
+                key={activeWorksheetKey}
+                pageKey={activeWorksheetKey}
+              />
+            ) : activeWorksheetKey === "production-order" || activeWorksheetKey === "copy-of-production-order" ? (
+              <ProductionOrderAnalyticsPage
+                key={activeWorksheetKey}
+                worksheetKey={activeWorksheetKey}
+              />
+            ) : activeWorksheetKey === "order-plan-monthly" ? (
+              <MonthlyOrderPlanPage key={activeWorksheetKey} />
+            ) : activeWorksheetKey === "downtime-analysis" || activeWorksheetKey === "oee-reliability" ? (
+              <ReliabilityAnalyticsPage key={activeWorksheetKey} pageKey={activeWorksheetKey} />
+            ) : (
+              <LineTrackerWorksheetPage key={activeWorksheetKey} worksheetKey={activeWorksheetKey} />
+            )
+          ) : (
+            <div className="line-tracker-worksheet__empty" role="alert">
+              The worksheet route is incomplete. Choose a worksheet from the ERC Mk-V Worksheets menu.
+            </div>
+          )
+        ) : activePage === "maintenance" ? (
+          <MaintenanceDashboard />
         ) : STUB_ROUTES.includes(activePage) ? (
           <div className="module-stub-panel" role="status">
             <div className="module-stub-card">
@@ -2650,11 +2776,25 @@ export function ManufacturingDashboard() {
             {/* ===================================================================
                 2. OPERATIONS CONTROL (FILTERS) — DIRECTLY BELOW EXECUTIVE HEADER
                 =================================================================== */}
-            <div className="dashboard-filters-wrapper">
+            <div className={`dashboard-filters-wrapper ${mobileFiltersOpen ? "dashboard-filters-wrapper--mobile-open" : ""}`}>
+              <div className="mobile-filter-summary" aria-label="Active filters">
+                <div className="mobile-filter-pills">
+                  <span>{liveAppliedFilters.dateFrom || "Start"} – {liveAppliedFilters.dateTo || "Latest"}</span>
+                  <span>{liveAppliedFilters.period}</span>
+                  <span>{liveAppliedFilters.line === "All Lines" ? "All Lines" : liveAppliedFilters.line}</span>
+                  <span>{liveAppliedFilters.shift === "All Shifts" ? "All Shifts" : liveAppliedFilters.shift}</span>
+                </div>
+                <button type="button" className="mobile-filter-trigger" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen}>
+                  Filters <b>{[liveAppliedFilters.dateFrom, liveAppliedFilters.dateTo, liveAppliedFilters.line, liveAppliedFilters.shift, liveAppliedFilters.stage, liveAppliedFilters.machine, liveAppliedFilters.material].filter(Boolean).length}</b>
+                </button>
+              </div>
               <FilterBar
                 filters={liveDraftFilters}
                 onChange={handleLiveDraftChange}
-                onApply={() => setLiveAppliedFilters(liveDraftFilters)}
+                onApply={() => {
+                  setLiveAppliedFilters(liveDraftFilters);
+                  setMobileFiltersOpen(false);
+                }}
                 onLatestData={handleLatestAvailableData}
                 autoDateMode={autoDateMode}
                 onReset={() => {
@@ -2670,6 +2810,7 @@ export function ManufacturingDashboard() {
                   setAutoDateMode(true);
                   setLiveDraftFilters(resetFilters);
                   setLiveAppliedFilters(resetFilters);
+                  setMobileFiltersOpen(false);
                   try {
                     sessionStorage.setItem(LIVE_FILTER_STORAGE_KEY, JSON.stringify(resetFilters));
                   } catch {
@@ -2760,6 +2901,28 @@ export function ManufacturingDashboard() {
           </>
         )}
       </main>
+
+      <nav className="mobile-bottom-nav" aria-label="Mobile primary navigation">
+        {[
+          ["#/dashboard", "Overview", "⌂"],
+          ["#/line-tracker", "ERC Tracker", "▦"],
+          ["#/production", "Production", "▥"],
+          ["#/dashboard", "Downtime", "◒"],
+        ].map(([href, label, icon]) => (
+          <button key={label} type="button" onClick={() => { window.location.hash = href; setMobileMenuOpen(false); }}>
+            <span aria-hidden="true">{icon}</span><small>{label}</small>
+          </button>
+        ))}
+        <button type="button" onClick={() => setMobileMenuOpen(true)}><span aria-hidden="true">☰</span><small>Menu</small></button>
+      </nav>
+
+      {/* AI Assistant Chatbot Button & Drawer */}
+      <ChatButton isOpen={isChatOpen} onClick={() => setIsChatOpen(true)} />
+      <ChatPanel
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        filters={liveDataset ? liveAppliedFilters : uploadedAppliedFilters}
+      />
     </div>
   );
 }

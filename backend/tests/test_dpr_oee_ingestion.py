@@ -19,6 +19,7 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.db.seeds.rejection_reasons import EXCEL_REJECTION_REASONS
 from app.db.session import get_engine
 from app.models.downtime_event import DowntimeEvent
 from app.models.downtime_reason import DowntimeReason
@@ -107,12 +108,20 @@ def _seed_downtime_reasons(session: Session) -> dict[str, DowntimeReason]:
 
 
 def _ensure_rejection_reasons(session: Session) -> None:
-    """Assert A–J exist (already seeded in DB); skip inventing if present."""
+    """Seed the canonical A–J catalog in this test's rollback-only transaction."""
     codes = set(session.scalars(select(RejectionReason.code)).all())
-    missing = {c for _, c in REJECTION_COLUMNS} - codes
-    assert not missing, (
-        f"rejection_reasons A–J must be seeded before ingestion tests; missing={missing}"
-    )
+    for code, label, sort_order, excel_column in EXCEL_REJECTION_REASONS:
+        if code not in codes:
+            session.add(
+                RejectionReason(
+                    code=code,
+                    label=label,
+                    is_active=True,
+                    sort_order=sort_order,
+                    excel_column=excel_column,
+                )
+            )
+    session.flush()
 
 
 def _seed_masters_for_real_xlsx(session: Session) -> dict[str, object]:

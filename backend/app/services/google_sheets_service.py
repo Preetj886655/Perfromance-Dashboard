@@ -410,9 +410,18 @@ def _resolve_worksheet_title(spreadsheet: dict[str, Any], requested_name: str | 
     return "Sheet1"
 
 
-def _fetch_sheet_values(
-    spreadsheet_id: str, worksheet_name: str | None = None
-) -> tuple[str, list[list[Any]], list[str]]:
+def _fetch_sheet_values_with_metadata(
+    spreadsheet_id: str,
+    worksheet_name: str | None = None,
+    *,
+    include_formulas: bool = False,
+) -> dict[str, Any]:
+    """Read one worksheet and return its values plus safe worksheet metadata.
+
+    This is the shared read-only path for callers that need the worksheet ID or
+    formula diagnostics. Existing callers can keep using ``_fetch_sheet_values``
+    and its original tuple contract.
+    """
     service_account_info = _get_credentials_info()
     if not service_account_info:
         raise RuntimeError("Google Sheets credentials were not configured.")
@@ -423,9 +432,34 @@ def _fetch_sheet_values(
     )
     service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
-    spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))",
+    ).execute()
+    sheet_list = spreadsheet.get("sheets") or []
+    matched_sheet = next(
+        (
+            sheet
+            for sheet in sheet_list
+            if (sheet.get("properties") or {}).get("title") == worksheet_name
+        ),
+        None,
+    ) if worksheet_name else None
+    if worksheet_name and matched_sheet is None:
+        raise ValueError(f"Worksheet '{worksheet_name}' was not found in the spreadsheet.")
+
     resolved_worksheet_name = _resolve_worksheet_title(spreadsheet, worksheet_name)
-    worksheet_range = f"{resolved_worksheet_name}!A:ZZ"
+    resolved_sheet = matched_sheet or next(
+        (
+            sheet
+            for sheet in sheet_list
+            if (sheet.get("properties") or {}).get("title") == resolved_worksheet_name
+        ),
+        {},
+    )
+    properties = resolved_sheet.get("properties") or {}
+    escaped_title = resolved_worksheet_name.replace("'", "''")
+    worksheet_range = f"'{escaped_title}'!A:ZZ"
     response = (
         service.spreadsheets()
         .values()
@@ -440,7 +474,72 @@ def _fetch_sheet_values(
     )
     rows = response.get("values", [])
     headers = rows[0] if rows else []
-    return resolved_worksheet_name, rows, [str(header).strip() for header in headers]
+    formula_rows: list[list[Any]] = []
+    if include_formulas:
+        formula_response = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                range=worksheet_range,
+                majorDimension="ROWS",
+                valueRenderOption="FORMULA",
+            )
+            .execute()
+        )
+        formula_rows = formula_response.get("values", []) or []
+
+    return {
+        "worksheet": resolved_worksheet_name,
+        "worksheet_id": properties.get("sheetId"),
+        "grid_row_count": (properties.get("gridProperties") or {}).get("rowCount"),
+        "grid_column_count": (properties.get("gridProperties") or {}).get("columnCount"),
+        "response_range": response.get("range"),
+        "rows": rows,
+        "headers": [str(header).strip() for header in headers],
+        "formula_rows": formula_rows,
+    }
+
+
+def fetch_google_sheet_worksheet_metadata(spreadsheet_id: str) -> list[dict[str, Any]]:
+    """Return safe metadata for every worksheet in a spreadsheet using read-only access."""
+    if not spreadsheet_id.strip():
+        raise ValueError("Google Sheets spreadsheet ID is not configured.")
+
+    service_account_info = _get_credentials_info()
+    if not service_account_info:
+        raise RuntimeError("Google Sheets credentials were not configured.")
+
+    credentials = service_account.Credentials.from_service_account_info(
+        service_account_info,
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    )
+    service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
+    response = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))",
+    ).execute()
+
+    return [
+        {
+            "worksheet_id": (sheet.get("properties") or {}).get("sheetId"),
+            "worksheet": (sheet.get("properties") or {}).get("title"),
+            "grid_row_count": (
+                (sheet.get("properties") or {}).get("gridProperties") or {}
+            ).get("rowCount"),
+            "grid_column_count": (
+                (sheet.get("properties") or {}).get("gridProperties") or {}
+            ).get("columnCount"),
+        }
+        for sheet in response.get("sheets") or []
+    ]
+
+
+def _fetch_sheet_values(
+    spreadsheet_id: str, worksheet_name: str | None = None
+) -> tuple[str, list[list[Any]], list[str]]:
+    result = _fetch_sheet_values_with_metadata(spreadsheet_id, worksheet_name)
+    return result["worksheet"], result["rows"], result["headers"]
 
 
 def get_google_sheet_status(

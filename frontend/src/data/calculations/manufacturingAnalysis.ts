@@ -79,8 +79,9 @@ function buildInsights(
 function aggregateReasons(records: DprRecord[]): AnalysisPoint | null {
   const buckets = new Map<string, number>();
   records.forEach((row) => {
-    if (!row.idleReason || !row.totalIdleTimeMinutes) return;
-    buckets.set(row.idleReason, (buckets.get(row.idleReason) ?? 0) + row.totalIdleTimeMinutes);
+    const reason = row.downtimeCategory ?? row.downtimeType ?? row.idleReason;
+    if (!reason || !row.totalIdleTimeMinutes) return;
+    buckets.set(reason, (buckets.get(reason) ?? 0) + row.totalIdleTimeMinutes);
   });
   const top = [...buckets.entries()].sort((a, b) => b[1] - a[1])[0];
   return top ? { key: top[0], value: top[1] } : null;

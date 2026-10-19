@@ -66,7 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [hydrate]);
 
   const login = useCallback(async (credentials: LoginCredentials) => {
-    setIsLoading(true);
     setIsForbidden(false);
     try {
       const me = await loginWithCredentials(credentials);
@@ -74,8 +73,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       setUser(null);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 

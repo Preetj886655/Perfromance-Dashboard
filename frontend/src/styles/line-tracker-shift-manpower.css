@@ -1,0 +1,315 @@
+.shift-manpower {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.shift-manpower__header,
+.shift-manpower__toolbar,
+.shift-manpower__source > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.shift-manpower__header h1 {
+  margin: 0.15rem 0 0.35rem;
+}
+
+.shift-manpower__header p,
+.shift-manpower__definition,
+.shift-manpower__coverage,
+.shift-manpower__footnote {
+  color: var(--text-secondary, #657084);
+}
+
+.shift-manpower__eyebrow {
+  margin: 0;
+  color: var(--primary, #1769aa);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shift-manpower__header > button,
+.shift-manpower button,
+.shift-manpower__filters button {
+  min-height: 2.5rem;
+  border: 1px solid var(--border-color, #d5dce5);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.8rem;
+  color: var(--text-primary, #202938);
+  background: var(--surface, #fff);
+  cursor: pointer;
+}
+
+.shift-manpower button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.shift-manpower__source {
+  border: 1px solid var(--border-color, #d5dce5);
+  border-radius: 0.6rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface, #fff);
+}
+
+.shift-manpower__source > div {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.shift-manpower__source > ul,
+.shift-manpower__warnings {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--text-secondary, #657084);
+  font-size: 0.82rem;
+}
+
+.shift-manpower__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+
+.shift-manpower__metric {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  border: 1px solid var(--border-color, #d5dce5);
+  border-radius: 0.6rem;
+  padding: 0.85rem;
+  background: var(--surface, #fff);
+}
+
+.shift-manpower__metric > span,
+.shift-manpower__metric > small,
+.shift-manpower__table small,
+.shift-manpower__table em {
+  color: var(--text-secondary, #657084);
+  font-size: 0.78rem;
+}
+
+.shift-manpower__metric > strong {
+  font-size: 1.25rem;
+}
+
+.shift-manpower__definition,
+.shift-manpower__coverage,
+.shift-manpower__footnote,
+.shift-manpower__warning,
+.shift-manpower__error {
+  margin: 0;
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface-muted, #f4f6f9);
+}
+
+.shift-manpower__warning,
+.shift-manpower__source li.is-stale,
+.shift-manpower__error {
+  color: #8d3c00;
+}
+
+.shift-manpower__error {
+  background: #fff0e8;
+}
+
+.shift-manpower__filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border-color, #d5dce5);
+  border-radius: 0.6rem;
+  background: var(--surface, #fff);
+}
+
+.shift-manpower__filters label,
+.shift-manpower__toolbar label,
+.shift-manpower__toolbar form label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--text-secondary, #657084);
+  font-size: 0.78rem;
+}
+
+.shift-manpower input,
+.shift-manpower select {
+  min-height: 2.4rem;
+  min-width: 7rem;
+  border: 1px solid var(--border-color, #d5dce5);
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  color: var(--text-primary, #202938);
+  background: var(--surface, #fff);
+}
+
+.shift-manpower__filters label:first-child {
+  flex: 1 1 13rem;
+}
+
+.shift-manpower__table-wrap {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--border-color, #d5dce5);
+  border-radius: 0.6rem;
+  background: var(--surface, #fff);
+}
+
+.shift-manpower__table {
+  width: 100%;
+  min-width: 1150px;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.shift-manpower__table--manpower {
+  min-width: 800px;
+}
+
+.shift-manpower__table th,
+.shift-manpower__table td {
+  padding: 0.65rem 0.7rem;
+  border-bottom: 1px solid var(--border-color, #e1e6ed);
+  text-align: left;
+  vertical-align: top;
+}
+
+.shift-manpower__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-muted, #f4f6f9);
+  white-space: nowrap;
+}
+
+.shift-manpower__table td small {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.shift-manpower__table tr.is-incomplete {
+  background: #fff9ed;
+}
+
+.shift-manpower__table a {
+  display: inline-block;
+  margin: 0 0.35rem 0.2rem 0;
+  color: var(--primary, #1769aa);
+}
+
+.shift-manpower__badge {
+  display: inline-block;
+  margin: 0.2rem;
+  border-radius: 99px;
+  padding: 0.15rem 0.45rem;
+  color: #7b4c00;
+  background: #fff0c2;
+  font-size: 0.72rem;
+}
+
+.shift-manpower__badge.is-matched {
+  color: #155b35;
+  background: #dff5e7;
+}
+
+.shift-manpower__badge.is-warning {
+  color: #7b4c00;
+  background: #fff0c2;
+}
+
+.shift-manpower__table details {
+  min-width: 8rem;
+}
+
+.shift-manpower__table dl {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 17rem;
+  max-height: 22rem;
+  overflow: auto;
+  margin: 0.5rem 0;
+}
+
+.shift-manpower__table dl > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(6rem, 1fr);
+  gap: 0.6rem;
+}
+
+.shift-manpower__table dt {
+  color: var(--text-secondary, #657084);
+}
+
+.shift-manpower__table dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.shift-manpower__toolbar {
+  flex-wrap: wrap;
+}
+
+.shift-manpower__toolbar > div,
+.shift-manpower__toolbar form {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.shift-manpower__toolbar button[aria-pressed="true"] {
+  border-color: var(--primary, #1769aa);
+  color: var(--primary, #1769aa);
+}
+
+.shift-manpower__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  color: var(--text-secondary, #657084);
+}
+
+@media (max-width: 700px) {
+  .shift-manpower__header,
+  .shift-manpower__source > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shift-manpower__header > button {
+    width: 100%;
+  }
+
+  .shift-manpower__filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .shift-manpower__filters label,
+  .shift-manpower__filters input,
+  .shift-manpower__filters select,
+  .shift-manpower__filters button,
+  .shift-manpower__toolbar select {
+    width: 100%;
+  }
+
+  .shift-manpower__toolbar,
+  .shift-manpower__toolbar > div,
+  .shift-manpower__toolbar form {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .shift-manpower__pagination {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+}

@@ -13,9 +13,13 @@ import "./styles/components.css";
 import "./styles/animations.css";
 import "./styles/dashboard.css";
 import "./styles/dashboard-carousel.css";
+import "./styles/maintenance.css";
+import "./styles/line-tracker.css";
+import "./styles/chat.css";
 import { ManufacturingDashboard } from "./pages/ManufacturingDashboard";
 import "./App.css";
 import "./styles/light-theme-overrides.css";
+import "./styles/responsive-dashboard.css";
 
 type ViewKey = "dashboard" | "users" | "masters";
 type Screen = "login" | "forgot-password" | "reset-password" | "create-account" | "app";

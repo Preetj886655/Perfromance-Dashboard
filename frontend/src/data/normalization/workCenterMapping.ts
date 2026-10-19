@@ -1,102 +1,84 @@
 /**
- * Work Center Mapping Configuration
+ * Canonical work-center resolver for the operational dashboard.
  *
- * Maps raw source Machine/Stage values to business Work Center categories.
- * Only CONFIRMED mappings are included. Raw machine values are always preserved
- * for traceability. Unmapped machines are explicitly labeled "Unmapped".
+ * Raw Stage and Machine values remain available on each normalized record, while
+ * dashboard groupings use these stable business labels.
  */
 
-export type WorkCenterMapping = {
-  /** The canonical work center label shown in the dashboard. */
-  workCenter: string;
+export type WorkCenterMapping = { workCenter: string };
+
+const NORMALIZE = (value: string): string =>
+  value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+
+const directMappings: Record<string, string> = {
+  ibh: "IBH",
+  "loading conveyor ibh": "IBH",
+  quenching: "Heat Treatment",
+  "tampering furnace": "Heat Treatment",
+  tempering: "Heat Treatment",
+  "tampering": "Heat Treatment",
+  packing: "Packing",
 };
 
 /**
- * CONFIRMED mappings from raw Machine value → Work Center.
- *
- * These mappings are derived from business semantics where the relationship
- * between the raw machine name and the business work center is clear and
- * unambiguous. For example:
- * - "IBH" is itself a work center.
- * - "Quenching" is itself a work center.
- * - "Autocopying-N" machines belong to the "Autocopy" work center.
- * - "MPI" / "MPI 1" / "MPI 2" belong to the "MPI" work center.
- * - "Tampering Furnace" / "Tampering" both belong to "Tempering".
+ * Resolve a raw Stage and Machine pair. Stage is the primary signal; machine
+ * aliases fill gaps where the source stage is abbreviated or inconsistent.
  */
-export const WORK_CENTER_MAPPINGS: Record<string, WorkCenterMapping> = {
-  // IBH is directly a work center
-  "IBH": { workCenter: "IBH" },
-  "Loading conveyor IBH": { workCenter: "IBH" },
-  "IBH - Loading conveyor": { workCenter: "IBH" },
+export function mapToWorkCenter(rawMachine?: string, rawStage?: string): string {
+  const machine = NORMALIZE(rawMachine ?? "");
+  const stage = NORMALIZE(rawStage ?? "");
+  if (!machine && !stage) return "Unmapped";
 
-  // Quenching is directly a work center
-  "Quenching": { workCenter: "Quenching" },
+  if (directMappings[stage]) return directMappings[stage];
+  if (directMappings[machine]) return directMappings[machine];
 
-  // Autocopy / Autocopying machines map to Autocopy work center
-  "Autocopying-1": { workCenter: "Autocopy" },
-  "Autocopying-2": { workCenter: "Autocopy" },
-  "Autocopying-3": { workCenter: "Autocopy" },
-  "Autocopying-4": { workCenter: "Autocopy" },
-  "Autocopying-5": { workCenter: "Autocopy" },
-  "Autocopying-6": { workCenter: "Autocopy" },
-  "Autocopying-7": { workCenter: "Autocopy" },
-  "Autocopying-8": { workCenter: "Autocopy" },
-  "Autocopying-9": { workCenter: "Autocopy" },
-
-  // MPI machines map to MPI work center
-  "MPI": { workCenter: "MPI" },
-  "MPI 1": { workCenter: "MPI" },
-  "MPI  1": { workCenter: "MPI" },
-  "MPI 2": { workCenter: "MPI" },
-
-  // Tempering machines map to Tempering work center
-  "Tampering Furnace": { workCenter: "Tempering" },
-  "Tampering": { workCenter: "Tempering" },
-};
-
-/**
- * Maps a raw machine name to its canonical Work Center.
- * Returns "Unmapped" if no confirmed mapping exists.
- */
-export function mapToWorkCenter(rawMachine: string | undefined): string {
-  if (!rawMachine || !rawMachine.trim()) {
-    return "Unmapped";
+  if (stage === "cut bar" || /bar crop+p(?:er|ing)/.test(machine) || machine.includes("bar corpper") || /(?:^|\s)bar cropper\s*[123]/.test(machine)) {
+    return "Bar Cropping (BC)";
   }
-  const trimmed = rawMachine.trim();
-  // Direct match
-  const direct = WORK_CENTER_MAPPINGS[trimmed];
-  if (direct) {
-    return direct.workCenter;
+  if (stage === "deburring" || /^db\s*[1-4]$/.test(machine) || machine === "deburring") {
+    return "Deburring (DB)";
   }
+  if (stage === "mpi" || /^mpi(?:\s*[1-4])?$/.test(machine)) {
+    return "MPI Inspection";
+  }
+  if (stage === "turned bar") {
+    if (machine.startsWith("autocopying") || machine.startsWith("acm ")) return "Autocopy Turning";
+    if (machine.startsWith("w cnc") || machine.startsWith("cnc ") || machine === "sikka1") return "CNC Turning";
+  }
+  if (stage === "clip" || stage === "forming") {
+    if (/line\s*[12]|press line\s*(e1|p2)/.test(machine)) return "Clip Forming";
+  }
+  if (stage === "tampering furnace" || stage === "tempering furnace" || stage === "quenching") {
+    return "Heat Treatment";
+  }
+  if (stage === "packing") return "Packing";
+
+  if (machine.startsWith("autocopying") || machine.startsWith("acm ")) return "Autocopy Turning";
+  if (machine.startsWith("w cnc") || machine.startsWith("cnc ") || machine === "sikka1") return "CNC Turning";
+  if (/^mpi(?:\s*[1-4])?$/.test(machine)) return "MPI Inspection";
+  if (/^db\s*[1-4]$/.test(machine)) return "Deburring (DB)";
+  if (machine.includes("bar cropper") || machine.includes("bar cropping")) return "Bar Cropping (BC)";
+  if (machine === "line 1" || machine === "line 2" || machine === "press line e1" || machine === "press line p2") return "Clip Forming";
+
   return "Unmapped";
 }
 
-/**
- * Returns all canonical work center values in the predefined business order.
- */
 export const BUSINESS_WORK_CENTERS: string[] = [
-  "Stock",
-  "Bar Cropping",
-  "Deburring (Chamfering)",
-  "MPI",
-  "Autocopy",
+  "Bar Cropping (BC)",
+  "Deburring (DB)",
+  "MPI Inspection",
+  "CNC Turning",
+  "Autocopy Turning",
+  "Clip Forming",
+  "Heat Treatment",
+  "Packing",
   "IBH",
-  "Forging",
-  "Quenching",
-  "Tempering",
-  "Linseed Oil",
-  "Application & Deflection",
 ];
 
-/**
- * Returns work centers ordered by the approved business taxonomy first,
- * then other discovered values alphabetically, with "Unmapped" last.
- */
 export function sortWorkCenters(values: string[]): string[] {
-  const known = BUSINESS_WORK_CENTERS.filter((wc) => values.includes(wc));
+  const known = BUSINESS_WORK_CENTERS.filter((workCenter) => values.includes(workCenter));
   const unknown = values
     .filter((value) => !BUSINESS_WORK_CENTERS.includes(value) && value !== "Unmapped")
     .sort((a, b) => a.localeCompare(b));
-  const unmapped = values.includes("Unmapped") ? ["Unmapped"] : [];
-  return [...known, ...unknown, ...unmapped];
+  return [...known, ...unknown, ...(values.includes("Unmapped") ? ["Unmapped"] : [])];
 }

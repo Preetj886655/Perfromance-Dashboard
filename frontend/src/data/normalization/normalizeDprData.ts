@@ -29,6 +29,8 @@ export type DprRecord = {
   plannedDownTimeMinutes?: number;
   availableTimeMinutes?: number;
   idleReason?: string;
+  downtimeCategory?: string;
+  downtimeType?: string;
   idleReasonBreakup: Array<{ reason: string; minutes: number }>;
   totalIdleTimeMinutes?: number;
   totalRunTimeMinutes?: number;
@@ -82,12 +84,17 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
   const machineName = toText(row["Machine Name"]);
   const machineNo = toText(row["Machine No."]);
   const rawStage = toText(row["Stage"]);
+  const downtimeMinutes = firstNumber(row, ["Downtime Mins", "Downtime Minutes", "Total Idle Time (Minutes)"]);
+  const downtimeHours = firstNumber(row, ["Downtime Hours"]);
+  const downtimeCategory = firstText(row, ["Downtime Category", "Category"]);
+  const downtimeType = firstText(row, ["Downtime Type (raw)", "Downtime Type", "Downtime Type Raw"]);
   const rawMaterialPart = toText(row["Part"]) ?? toText(row["Part Name"]);
   const materialName = toText(row["Material Name"]);
   const actualProductionQty = toNumber(row["Actual Production Qty."]);
 
   const hasSignal = Boolean(date) || Boolean(machineName) || Boolean(machineNo) || Boolean(row["Line"])
-    || isFiniteNumber(actualProductionQty) || isFiniteNumber(toNumber(row["Total Idle Time (Minutes)"]))
+    || isFiniteNumber(actualProductionQty)     || isFiniteNumber(downtimeMinutes)
+    || isFiniteNumber(downtimeHours)
     || isFiniteNumber(toNumber(row["Total Rejection (Pcs Qty.)"]));
   if (!hasSignal) {
     return null;
@@ -132,8 +139,10 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
     plannedDownTimeMinutes: toNumber(row["Planned Down Time (Tea/Lunch)"]) ?? undefined,
     availableTimeMinutes: toNumber(row["Available Time"]) ?? undefined,
     idleReason: toText(row["Reason of Idle Time (Unplanned BD Time in Minutes)"]) ?? toText(row["Downtime Reason"]) ?? idleReasonFromBreakup ?? undefined,
+    downtimeCategory: downtimeCategory ?? undefined,
+    downtimeType: downtimeType ?? undefined,
     idleReasonBreakup,
-    totalIdleTimeMinutes: toNumber(row["Total Idle Time (Minutes)"]) ?? undefined,
+    totalIdleTimeMinutes: downtimeMinutes ?? (downtimeHours !== null ? downtimeHours * 60 : undefined),
     totalRunTimeMinutes: toNumber(row["Total Run Time (Minutes)"]) ?? undefined,
     availabilityRatio: toRatio(row["Availability Ratio (A)"]) ?? undefined,
     actualQtyPerHour: toNumber(row["Actual Qty./ Hr."]) ?? undefined,
@@ -147,7 +156,7 @@ export function normalizeDprRow(row: DprRawRow, index: number): DprRecord | null
     sourceOeeRatio: toRatio(row["OEE (A*P*Q)"]) ?? undefined,
     remarks: toText(row["Any Other Remarks"]) ?? toText(row["Description"]) ?? undefined,
     rawStage: rawStage ?? undefined,
-    workCenter: mapToWorkCenter(machineName ?? machineNo ?? rawStage ?? undefined),
+    workCenter: mapToWorkCenter(machineName ?? machineNo ?? undefined, rawStage ?? undefined),
     material: materialName ?? normalizeMaterial(rawMaterialPart ?? undefined),
     customColumns,
     raw: row,
@@ -182,6 +191,14 @@ const KNOWN_HEADERS = new Set([
   "Available Time",
   "Reason of Idle Time (Unplanned BD Time in Minutes)",
   "Total Idle Time (Minutes)",
+  "Downtime Mins",
+  "Downtime Minutes",
+  "Downtime Hours",
+  "Downtime Category",
+  "Category",
+  "Downtime Type (raw)",
+  "Downtime Type",
+  "Downtime Type Raw",
   "Total Run Time (Minutes)",
   "Availability Ratio (A)",
   "Actual Qty./ Hr.",
@@ -238,6 +255,22 @@ function toText(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const normalized = String(value).trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function firstText(row: DprRawRow, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = toText(row[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function firstNumber(row: DprRawRow, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = toNumber(row[key]);
+    if (isFiniteNumber(value)) return value;
+  }
+  return null;
 }
 
 function toNumber(value: unknown): number | null {

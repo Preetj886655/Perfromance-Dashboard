@@ -8,9 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     auth,
+    chat,
     dashboard,
     health,
     imports,
+    line_tracker,
+    maintenance,
     manufacturing,
     masters,
     production_records,
@@ -89,9 +92,12 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(imports.router)
 app.include_router(manufacturing.router)
+app.include_router(maintenance.router)
 app.include_router(masters.router)
 app.include_router(production_records.router)
 app.include_router(dashboard.router)
+app.include_router(line_tracker.router, prefix=settings.api_prefix)
+app.include_router(chat.router)
 
 
 @app.get("/")
