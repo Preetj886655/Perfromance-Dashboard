@@ -129,9 +129,10 @@ def resolve_line_tracker_file_path() -> str | None:
     """Find the existing ERC Mk-V Line Tracker workbook on disk."""
     candidates = [
         getattr(settings, "line_tracker_local_path", ""),
+        os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "ERC_MkV_Line_Tracker R0_10102026.xlsx")),
+        os.path.join(os.getcwd(), "ERC_MkV_Line_Tracker R0_10102026.xlsx"),
         r"C:\Users\Preet Jaiswal\Downloads\ERC_MkV_Line_Tracker R0_10102026.xlsx",
         os.path.join(os.path.expanduser("~"), "Downloads", "ERC_MkV_Line_Tracker R0_10102026.xlsx"),
-        os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "ERC_MkV_Line_Tracker R0_10102026.xlsx")),
     ]
     for c in candidates:
         if c and os.path.exists(c):
@@ -241,6 +242,7 @@ def _downtime_column_indexes(headers: list[str]) -> dict[str, int | None]:
             "downtimemins",
             "downtimemin",
             "downtimeminutes",
+            "downtimemints",
             "downtimehours",
             "downtimehrs",
             "downtimeseconds",
@@ -261,12 +263,14 @@ def _downtime_column_indexes(headers: list[str]) -> dict[str, int | None]:
     result: dict[str, int | None] = {}
     for field, accepted in aliases.items():
         result[field] = next((idx for idx, key in enumerate(keys) if key in accepted), None)
+    if result["category"] is None and result.get("downtime_type") is not None:
+        result["category"] = result["downtime_type"]
     return result
 
 
 def _downtime_duration_unit(header: str) -> str | None:
     key = _downtime_header_key(header)
-    if re.search(r"(mins?|minutes?)$", key):
+    if re.search(r"(mins?|minutes?|mints?)$", key):
         return "minutes"
     if re.search(r"(hrs?|hours?)$", key):
         return "hours"
@@ -855,11 +859,20 @@ def parse_line_tracker_workbook(
     incomplete_target_count = 0
 
     if ws_dt:
+        dt_headers = [str(ws_dt.cell(1, col).value or "").strip() for col in range(1, 30)]
+        col_map = _downtime_column_indexes(dt_headers)
+
+        def _get_dt_cell(row_idx: int, field: str) -> Any:
+            idx = col_map.get(field)
+            if idx is None:
+                return None
+            return ws_dt.cell(row_idx, idx + 1).value
+
         for r in range(2, ws_dt.max_row + 1):
             if r >= 14569:
                 mirrored_rows_skipped += 1
                 continue
-            date_raw = ws_dt.cell(r, 1).value
+            date_raw = _get_dt_cell(r, "date")
             if not date_raw or str(date_raw).startswith("Rows"):
                 continue
             date_str = _clean_date_str(date_raw)
@@ -869,20 +882,24 @@ def parse_line_tracker_workbook(
             if date_str.startswith("2024-11"):
                 nov_2024_count += 1
 
-            line = _clean_str(ws_dt.cell(r, 2).value) or "ERC"
-            shift = _clean_str(ws_dt.cell(r, 3).value) or "All"
-            part = _clean_str(ws_dt.cell(r, 4).value) or "MK5"
-            stage = _clean_str(ws_dt.cell(r, 5).value) or "All"
-            machine = _clean_str(ws_dt.cell(r, 6).value) or "All"
-            dt_raw = _clean_str(ws_dt.cell(r, 7).value)
-            dt_cat = _clean_str(ws_dt.cell(r, 8).value) or "Unclassified"
-            bd_type = _clean_str(ws_dt.cell(r, 9).value)
-            dt_mins = _clean_float(ws_dt.cell(r, 10).value) or 0.0
-            prod_loss = _clean_float(ws_dt.cell(r, 11).value) or 0.0
-            prod_target = _clean_float(ws_dt.cell(r, 12).value)
-            prod_actual = _clean_float(ws_dt.cell(r, 13).value) or 0.0
-            rejection = _clean_float(ws_dt.cell(r, 14).value) or 0.0
-            desc = _clean_str(ws_dt.cell(r, 15).value)
+            line = _clean_str(_get_dt_cell(r, "line")) or "ERC"
+            shift = _clean_str(_get_dt_cell(r, "shift")) or "All"
+            part = _clean_str(_get_dt_cell(r, "part")) or "MK5"
+            stage = _clean_str(_get_dt_cell(r, "stage")) or "All"
+            machine = _clean_str(_get_dt_cell(r, "machine")) or "All"
+            dt_raw = _clean_str(_get_dt_cell(r, "downtime_type"))
+            dt_cat = _clean_str(_get_dt_cell(r, "category")) or "Unclassified"
+            bd_type = _clean_str(_get_dt_cell(r, "breakdown_type"))
+            if not bd_type and dt_raw:
+                low_raw = dt_raw.lower()
+                if "b/d" in low_raw or "breakdown" in low_raw:
+                    bd_type = "Mechanical" if "mech" in low_raw else "Electrical" if "elec" in low_raw else "Breakdown"
+            dt_mins = _clean_float(_get_dt_cell(r, "duration")) or 0.0
+            prod_loss = _clean_float(_get_dt_cell(r, "production_loss")) or 0.0
+            prod_target = _clean_float(_get_dt_cell(r, "production_target"))
+            prod_actual = _clean_float(_get_dt_cell(r, "total_production")) or 0.0
+            rejection = _clean_float(_get_dt_cell(r, "rejection")) or 0.0
+            desc = _clean_str(_get_dt_cell(r, "description"))
 
             if prod_target is None or prod_target == 0:
                 incomplete_target_count += 1
@@ -1874,7 +1891,12 @@ def get_line_tracker_reliability_analysis(
     if not planned_supported or not duration_metrics_available:
         planned_hrs = planned_pct = unplanned_hrs = unplanned_pct = None
 
-    breakdown_records = [r for r in filtered if r.get("category", "").lower() == "breakdown"]
+    breakdown_records = [
+        r for r in filtered
+        if r.get("category", "").lower() == "breakdown"
+        or bool(r.get("breakdown_type"))
+        or "b/d" in (r.get("downtime_type") or "").lower()
+    ]
     breakdown_count = len(breakdown_records)
     breakdown_duration_count = sum(
         1 for r in breakdown_records
@@ -1980,7 +2002,12 @@ def get_line_tracker_reliability_analysis(
         if valid_duration is not None:
             mach_tally[m]["categories"][cat_name] = mach_tally[m]["categories"].get(cat_name, 0.0) + dt_m
 
-        if cat_name.lower() == "breakdown":
+        is_bd = (
+            cat_name.lower() == "breakdown"
+            or bool(r.get("breakdown_type"))
+            or "b/d" in (r.get("downtime_type") or "").lower()
+        )
+        if is_bd:
             mach_tally[m]["breakdown_count"] += 1
             if valid_duration is not None:
                 mach_tally[m]["breakdown_minutes"] += valid_duration

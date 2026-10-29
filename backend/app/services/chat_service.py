@@ -16,7 +16,7 @@ import logging
 import re
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
-    role: str = Field(..., description="'user', 'assistant', or 'system'")
-    content: str = Field(..., description="Message text")
+    role: Literal["user", "assistant"] = Field(..., description="Conversation speaker")
+    content: str = Field(..., min_length=1, max_length=4000, description="Message text")
 
 
 class ChatFilterContext(BaseModel):
@@ -46,9 +46,9 @@ class ChatFilterContext(BaseModel):
 
 
 class ChatRequestPayload(BaseModel):
-    message: str = Field(..., min_length=1, description="User's query")
+    message: str = Field(..., min_length=1, max_length=2000, description="User's query")
     conversation_id: str | None = Field(default=None, description="Existing or new conversation ID")
-    history: list[ChatMessage] = Field(default_factory=list, description="Recent conversation turns")
+    history: list[ChatMessage] = Field(default_factory=list, max_length=12, description="Recent conversation turns")
     filters: ChatFilterContext = Field(default_factory=ChatFilterContext, description="Active dashboard filters")
 
 
@@ -125,6 +125,9 @@ _MONTHS_MAP = {
 _MONTH_NAME_PATTERN = "|".join(sorted(_MONTHS_MAP, key=len, reverse=True))
 _MONTH_YEAR_PATTERN = re.compile(
     rf"\b({_MONTH_NAME_PATTERN})\s+(\d{{4}})\b", re.IGNORECASE
+)
+_MONTH_ONLY_PATTERN = re.compile(
+    rf"\b({_MONTH_NAME_PATTERN})(?:\s+month)?\b", re.IGNORECASE
 )
 
 _GREETING_WORDS = {
@@ -257,15 +260,16 @@ def _parse_explicit_dates(query: str) -> list[date]:
     return [value for _, value in sorted(found, key=lambda item: item[0])]
 
 
-def _parse_month_range(query: str) -> tuple[date, date] | None:
-    """Return the full calendar month named in a query, when it includes a year."""
+def _parse_month_range(query: str, ref_date: date | None = None) -> tuple[date, date] | None:
+    """Return the full calendar month named in a query."""
     match = _MONTH_YEAR_PATTERN.search(query)
+    month = _MONTHS_MAP.get(match.group(1).lower()) if match else None
+    year = int(match.group(2)) if match else _get_business_today(ref_date).year
     if not match:
-        return None
-    month = _MONTHS_MAP.get(match.group(1).lower())
+        match = _MONTH_ONLY_PATTERN.search(query)
+        month = _MONTHS_MAP.get(match.group(1).lower()) if match else None
     if month is None:
         return None
-    year = int(match.group(2))
     try:
         start = date(year, month, 1)
     except ValueError:
@@ -387,7 +391,7 @@ def _resolve_query_period(
             start, end = end, start
         return start.isoformat(), end.isoformat(), f"{start:%B} {start.day} to {end:%B} {end.day}, {end.year}"
 
-    explicit_month = _parse_month_range(query)
+    explicit_month = _parse_month_range(query, ref_date=ref_date)
     if explicit_month:
         start, end = explicit_month
         return start.isoformat(), end.isoformat(), start.strftime("%B %Y")
@@ -430,11 +434,11 @@ def _resolve_query_period(
         start = today - timedelta(days=364)
         return start.isoformat(), today.isoformat(), "past 365 days"
 
-    if any(phrase in q for phrase in ("this month", "current month", "month to date", "month-to-date")):
+    if any(phrase in q for phrase in ("this month", "current month", "month to date", "month-to-date", "monthly")):
         start = date(today.year, today.month, 1)
         return start.isoformat(), today.isoformat(), start.strftime("%B %Y")
 
-    if any(phrase in q for phrase in ("this week", "current week", "week to date", "week-to-date")):
+    if any(phrase in q for phrase in ("this week", "current week", "week to date", "week-to-date", "weekly")):
         start = today - timedelta(days=today.weekday())
         return start.isoformat(), today.isoformat(), "week to date"
 
@@ -449,7 +453,7 @@ def _resolve_query_period(
         start = date(last_previous_quarter.year, ((last_previous_quarter.month - 1) // 3) * 3 + 1, 1)
         return start.isoformat(), last_previous_quarter.isoformat(), f"quarter ending {last_previous_quarter:%B %Y}"
 
-    if "this quarter" in q or "quarter to date" in q or "quarter-to-date" in q:
+    if "this quarter" in q or "quarter to date" in q or "quarter-to-date" in q or "quarterly" in q:
         start = date(today.year, ((today.month - 1) // 3) * 3 + 1, 1)
         return start.isoformat(), today.isoformat(), "quarter to date"
 
@@ -458,7 +462,9 @@ def _resolve_query_period(
         end = date(today.year - 1, 12, 31)
         return start.isoformat(), end.isoformat(), str(start.year)
 
-    if "this year" in q or "year to date" in q or "year-to-date" in q:
+    if "this year" in q or "year to date" in q or "year-to-date" in q or any(
+        phrase in q for phrase in ("yearly", "annual", "annually")
+    ):
         start = date(today.year, 1, 1)
         return start.isoformat(), today.isoformat(), "year to date"
 

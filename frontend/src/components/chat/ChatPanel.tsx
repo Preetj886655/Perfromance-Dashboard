@@ -30,6 +30,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const requestVersionRef = useRef(0);
 
   // Auto-scroll on new message
   useEffect(() => {
@@ -42,6 +43,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 150);
+    } else {
+      requestVersionRef.current += 1;
     }
   }, [isOpen]);
 
@@ -63,6 +66,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setIsLoading(true);
+    const requestVersion = ++requestVersionRef.current;
 
     try {
       const response = await sendChatMessage({
@@ -80,6 +84,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
         },
       });
 
+      if (requestVersion !== requestVersionRef.current) return;
+
       setConversationId(response.conversation_id);
 
       const assistantMsg: ChatMessage = {
@@ -92,10 +98,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
 
       setMessages([...nextMessages, assistantMsg]);
     } catch (err: unknown) {
+      if (requestVersion !== requestVersionRef.current) return;
       const msg = err instanceof Error ? err.message : "Failed to get AI response";
       setError(msg);
     } finally {
-      setIsLoading(false);
+      if (requestVersion === requestVersionRef.current) setIsLoading(false);
     }
   };
 
@@ -107,9 +114,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
   };
 
   const handleClearChat = () => {
+    requestVersionRef.current += 1;
     setMessages([]);
     setConversationId(undefined);
     setError(null);
+  };
+
+  const handleClose = () => {
+    requestVersionRef.current += 1;
+    onClose();
   };
 
   // Safe markdown line renderer
@@ -130,7 +143,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
       if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
         const text = trimmed.substring(2);
         return (
-          <li key={idx} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(text) }} />
+          <li key={idx}>{formatInlineMarkdown(text)}</li>
         );
       }
       // Empty line
@@ -139,16 +152,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
       }
       // Paragraph
       return (
-        <p key={idx} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(trimmed) }} />
+        <p key={idx}>{formatInlineMarkdown(trimmed)}</p>
       );
     });
   };
 
-  const formatInlineMarkdown = (text: string) => {
-    return text
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.*?)\*/g, "<em>$1</em>")
-      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  const formatInlineMarkdown = (text: string): React.ReactNode => {
+    const tokens = text.split(/(\*\*.*?\*\*|\*.*?\*|`[^`]+`)/g);
+    return tokens.map((token, index) => {
+      if (token.startsWith("**") && token.endsWith("**")) {
+        return <strong key={index}>{token.slice(2, -2)}</strong>;
+      }
+      if (token.startsWith("*") && token.endsWith("*")) {
+        return <em key={index}>{token.slice(1, -1)}</em>;
+      }
+      if (token.startsWith("`") && token.endsWith("`")) {
+        return <code key={index}>{token.slice(1, -1)}</code>;
+      }
+      return token;
+    });
   };
 
   const activeDateDisplay =
@@ -184,7 +206,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ isOpen, onClose, filters }
           <button
             type="button"
             className="chat-header__btn"
-            onClick={onClose}
+            onClick={handleClose}
             title="Close assistant"
             aria-label="Close"
           >

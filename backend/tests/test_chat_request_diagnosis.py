@@ -239,6 +239,26 @@ def test_active_filters_apply_without_explicit_period_and_explicit_month_wins():
     assert month_result.data_used["tool_arguments"]["date_to"] == "2026-09-30"
 
 
+def test_month_without_year_uses_business_year():
+    response = _process("What is the total production august month?")
+    assert response.data_used["tool_arguments"]["date_from"] == "2026-08-01"
+    assert response.data_used["tool_arguments"]["date_to"] == "2026-08-31"
+
+
+def test_dashboard_line_display_label_matches_raw_source_line():
+    assert analytics.filter_manufacturing_records(
+        [{"line": "ERC", "date": "2026-08-15", "stage": "Clip"}],
+        line="ERC Line",
+    )
+
+
+def test_natural_period_aliases_resolve_to_current_periods():
+    quarterly = _process("What is the quarterly production?")
+    yearly = _process("What is the yearly production?")
+    assert quarterly.data_used["tool_arguments"]["date_from"] == "2026-10-01"
+    assert yearly.data_used["tool_arguments"]["date_from"] == "2026-01-01"
+
+
 def test_previous_day_follow_up_keeps_material_and_uses_prior_date_context():
     response = _process(
         "What about the previous day?",

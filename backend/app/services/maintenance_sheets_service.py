@@ -199,7 +199,7 @@ def get_maintenance_status(
         spreadsheet_id
         or getattr(settings, "maintenance_spreadsheet_id", None)
         or os.getenv("MAINTENANCE_SPREADSHEET_ID")
-        or "1u4ZaYcrJym_wbDpNE0iHdXBcGJOR1kLww7G6XwOSrWs"
+        or "1u4ZaYcrJym_wbDpNEOiHdXBcGJ0R1kLww7G6XwOSrWs"
     )
     target_ws = (
         worksheet_name
@@ -287,7 +287,7 @@ def fetch_maintenance_dataset(
         spreadsheet_id
         or getattr(settings, "maintenance_spreadsheet_id", None)
         or os.getenv("MAINTENANCE_SPREADSHEET_ID")
-        or "1u4ZaYcrJym_wbDpNE0iHdXBcGJOR1kLww7G6XwOSrWs"
+        or "1u4ZaYcrJym_wbDpNEOiHdXBcGJ0R1kLww7G6XwOSrWs"
     )
     target_ws = (
         worksheet_name

@@ -4,6 +4,31 @@
   color: #0f172a;
 }
 
+.order-analytics .btn {
+  border: 1px solid #334155;
+  background: #334155;
+  color: #ffffff;
+}
+
+.order-analytics .btn:hover:not(:disabled) {
+  border-color: #1e293b;
+  background: #1e293b;
+  color: #ffffff;
+}
+
+.order-analytics .btn:disabled {
+  border-color: #94a3b8;
+  background: #94a3b8;
+  color: #ffffff;
+  opacity: 1;
+}
+
+.order-analytics .btn--primary {
+  border-color: var(--color-primary, #6366f1);
+  background: var(--color-primary, #6366f1);
+  color: #ffffff;
+}
+
 .order-analytics__header {
   display: flex;
   align-items: flex-start;

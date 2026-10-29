@@ -2189,3 +2189,14 @@ body {
     grid-column: auto;
   }
 }
+
+
+/* ============================================ */
+/* AUTH VISUAL ENHANCEMENT */
+/* ============================================ */
+.auth-visual-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0.25rem 0 1rem;
+}

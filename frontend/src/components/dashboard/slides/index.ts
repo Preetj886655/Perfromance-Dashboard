@@ -20,3 +20,5 @@ export { PeriodComparisonChart } from "./PeriodComparisonChart";
 export { MachineDetailModal } from "./MachineDetailModal";
 export { TargetActualChart } from "./TargetActualChart";
 export { TargetGapAnalysisSlide } from "./TargetGapAnalysisSlide";
+export { OeeEquipmentSlide } from "./OeeEquipmentSlide";
+

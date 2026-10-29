@@ -24,6 +24,7 @@ import {
   RelationshipSlide,
   ManagementInsightsSlide,
   TargetGapAnalysisSlide,
+  OeeEquipmentSlide,
   MachineDetailModal,
   useDashboardAnalytics,
 } from "./slides";
@@ -138,6 +139,12 @@ export function LiveGoogleSheetsSection({
         ),
       },
       { id: "production", title: "Production Performance", icon: "🏭", content: <ProductionSlide analytics={carouselAnalytics} onNavigateSlide={handleSlideChange} /> },
+      {
+        id: "oee",
+        title: "OEE & Equipment Effectiveness",
+        icon: "⚡",
+        content: <OeeEquipmentSlide onNavigateSlide={handleSlideChange} />,
+      },
       {
         id: "target-gap",
         title: "Target / Gap Analysis",

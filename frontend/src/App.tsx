@@ -20,6 +20,7 @@ import { ManufacturingDashboard } from "./pages/ManufacturingDashboard";
 import "./App.css";
 import "./styles/light-theme-overrides.css";
 import "./styles/responsive-dashboard.css";
+import "./styles/premium-dashboard.css";
 
 type ViewKey = "dashboard" | "users" | "masters";
 type Screen = "login" | "forgot-password" | "reset-password" | "create-account" | "app";

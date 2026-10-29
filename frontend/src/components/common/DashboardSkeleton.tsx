@@ -47,7 +47,7 @@ export function DashboardLoadingSkeleton() {
       transition={{ duration: 0.2 }}
     >
       <div className="skeleton-banner">
-        <div className="skeleton-banner__spinner" />
+        <span className="skeleton-banner__spinner" aria-hidden="true" />
         <div className="skeleton-banner__text">
           <strong>Synchronizing Live Manufacturing Dataset...</strong>
           <span>Connecting to Google Sheets data pipeline and aggregating operational records</span>

@@ -63,6 +63,21 @@ def _match_string(record_val: Any, filter_val: str | None) -> bool:
     return rec_str == fil_str or fil_str in rec_str
 
 
+def _match_line(record_val: Any, filter_val: str | None) -> bool:
+    """Match raw source line names to the dashboard's display labels."""
+    if _match_string(record_val, filter_val):
+        return True
+    if not record_val or _is_all_filter(filter_val):
+        return False
+    record_line = str(record_val).strip().lower()
+    requested_line = str(filter_val).strip().lower()
+    if requested_line.endswith(" line"):
+        requested_line = requested_line[:-5].strip()
+    if record_line.endswith(" line"):
+        record_line = record_line[:-5].strip()
+    return record_line == requested_line
+
+
 def get_raw_manufacturing_records() -> list[dict[str, Any]]:
     """Fetch the latest manufacturing dataset from the sheets service."""
     res = fetch_google_sheet_dataset()
@@ -105,7 +120,7 @@ def filter_manufacturing_records(
         if date_from or date_to:
             if not _match_date_range(r.get("date"), date_from, date_to):
                 continue
-        if not _is_all_filter(line) and not _match_string(r.get("line"), line):
+        if not _is_all_filter(line) and not _match_line(r.get("line"), line):
             continue
         if not _is_all_filter(shift) and not _match_string(r.get("shift"), shift):
             continue

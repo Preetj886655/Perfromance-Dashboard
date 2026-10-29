@@ -479,6 +479,41 @@ export function ExecutiveOverviewSlide({ analytics, onNavigateSlide, activeFilte
         </div>
       )}
 
+      {/* Executive OEE & Equipment Status Banner */}
+      <div
+        className="exec-oee-strip"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "0.75rem",
+          background: "linear-gradient(90deg, #f8fafc 0%, #eff6ff 100%)",
+          border: "1px solid #dbeafe",
+          borderRadius: "8px",
+          padding: "0.6rem 1rem",
+          marginBottom: "1rem",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", fontSize: "0.85rem", color: "#1e293b", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "1.2rem" }}>⚡</span>
+          <span>
+            <b>Plant Overall OEE:</b> <strong style={{ color: "#4f46e5", fontSize: "1rem" }}>37.96%</strong> (Availability: 100% | Performance: 38.17% | Quality: 99.45%)
+          </span>
+          <span className="badge" style={{ background: "#fef3c7", color: "#b45309", padding: "2px 8px", borderRadius: "10px", fontSize: "0.75rem", fontWeight: 700 }}>
+            Speed Loss Constrained (68.0 hrs drag)
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onNavigateSlide?.("oee")}
+          className="btn btn--outline"
+          style={{ fontSize: "0.8rem", padding: "0.3rem 0.75rem", fontWeight: 700, color: "#2563eb", borderColor: "#bfdbfe", background: "#ffffff", cursor: "pointer" }}
+        >
+          View Full OEE &amp; Machine Productivity →
+        </button>
+      </div>
+
       {/* ===================================================================
           1. SIX-CARD EXECUTIVE KPI ROW (At Top, immediately below Filters)
           =================================================================== */}

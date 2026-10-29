@@ -11,7 +11,6 @@ import {
   buildOeeBreakdownOption,
   buildReliabilityComparisonOption,
 } from "./ReliabilityAnalyticsCharts";
-import { displayValue } from "./rawMaterialFormatting";
 import "../../styles/line-tracker-dashboards.css";
 import "../../styles/line-tracker-order-analytics.css";
 
@@ -72,7 +71,6 @@ export function ReliabilityAnalyticsPage({
             <p className="line-dashboard__note">Table 2 source rows 30–49. No recalculation from the paginated Downtime Log is performed.</p>
             <ReactECharts option={buildBreakdownSeverityOption(data.records)} style={{ height: 480, width: "100%" }} notMerge />
           </section>
-          <ReliabilityDataTable data={data} />
         </>
       )}
       {data && pageKey === "oee-reliability" && (
@@ -93,28 +91,8 @@ export function ReliabilityAnalyticsPage({
             <ReactECharts option={buildReliabilityComparisonOption(data.records, 20, 34, "MTTR", "Occurrences")} style={{ height: 480, width: "100%" }} notMerge />
             <ReactECharts option={buildReliabilityComparisonOption(data.records, 40, 54, "MTBF", "Events")} style={{ height: 480, width: "100%" }} notMerge />
           </section>
-          <ReliabilityDataTable data={data} />
         </>
       )}
-    </section>
-  );
-}
-
-function ReliabilityDataTable({ data }: { data: LineTrackerWorksheetResponse }) {
-  return (
-    <section className="line-dashboard__table-wrap" aria-label="Reliability source data">
-      <h3>Detailed reliability data</h3>
-      <div className="order-analytics__table-wrap">
-        <table className="order-analytics__table">
-          <thead><tr><th>Row</th>{data.headers.map((header, index) => <th key={`${index}-${header}`}>{header}</th>)}</tr></thead>
-          <tbody>{data.records.map((record) => (
-            <tr key={record.row_number}>
-              <td>{record.row_number}</td>
-              {data.headers.map((_, index) => <td key={`${record.row_number}-${index}`}>{displayValue(record.values[index])}</td>)}
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
     </section>
   );
 }
