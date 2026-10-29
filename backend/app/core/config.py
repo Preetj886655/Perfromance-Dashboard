@@ -3,7 +3,9 @@
 import os
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 # Resolve .env relative to this file so it works regardless of the CWD
 # from which uvicorn is launched (e.g., project root vs backend/).
@@ -70,6 +72,13 @@ class Settings(BaseSettings):
     google_sheets_credentials_json: str = ""
     google_sheets_service_account_json: str = ""
 
+    # Prefer the Supabase session-pooler URL in production. POSTGRES_* remains
+    # supported for local Docker Compose development.
+    database_url_value: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL"),
+    )
+
     # PostgreSQL — credentials come from env; never commit real secrets
     # Prefer 127.0.0.1 over localhost so clients do not resolve to a different
     # stack via IPv6 when both a host Postgres and Docker publish listeners.
@@ -82,6 +91,16 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        if self.database_url_value:
+            raw_url = self.database_url_value.strip()
+            if raw_url.startswith("postgres://"):
+                raw_url = "postgresql://" + raw_url[len("postgres://") :]
+
+            parsed_url = make_url(raw_url)
+            if parsed_url.drivername in {"postgresql", "postgresql+asyncpg"}:
+                parsed_url = parsed_url.set(drivername="postgresql+psycopg")
+            return parsed_url.render_as_string(hide_password=False)
+
         return (
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
