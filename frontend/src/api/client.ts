@@ -3,7 +3,7 @@
  * Uses VITE_API_BASE_URL when set; otherwise same-origin (Vite proxy /api).
  */
 
-import { clearAccessToken, readAccessToken } from "../auth/storage";
+import { readAccessToken } from "../auth/storage";
 import type { ApiError } from "../types/dashboard";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
@@ -40,35 +40,41 @@ function buildUrl(
   return `${url.pathname}${url.search}`;
 }
 
-function getTokenHeader(): Record<string, string> {
-  const token = readAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function mergeHeaders(
+  defaultHeaders: Record<string, string>,
+  optionsHeaders: HeadersInit | undefined,
+  token: string | null,
+): Headers {
+  const headers = new Headers(defaultHeaders);
+  if (optionsHeaders) {
+    new Headers(optionsHeaders).forEach((value, key) => headers.set(key, value));
+  }
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return headers;
 }
 
-function handleResponseAuthError(status: number, requestToken: string | null): void {
-  // An unauthenticated request can legitimately receive 401 (for example
-  // during initial app hydration). It must not clear a token that may have
-  // been saved by a concurrent login flow.
-  if (status === 401 && requestToken && readAccessToken() === requestToken) {
-    clearAccessToken();
-    window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
-  }
+function handleResponseAuthError(status: number): void {
   if (status === 403) {
     window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
   }
 }
 
+type ApiRequestOptions = Omit<RequestInit, "body" | "method">;
+
 export async function apiGet<T>(
   path: string,
   query?: Record<string, string | number | undefined | null>,
+  options?: ApiRequestOptions,
 ): Promise<T> {
   const token = readAccessToken();
   const response = await fetch(buildUrl(path, query), {
+    ...options,
     method: "GET",
-    headers: {
+    headers: mergeHeaders({
       Accept: "application/json",
-      ...getTokenHeader(),
-    },
+    }, options?.headers, token),
   });
 
   let body: unknown = null;
@@ -82,7 +88,7 @@ export async function apiGet<T>(
   }
 
   if (!response.ok) {
-    handleResponseAuthError(response.status, token);
+    handleResponseAuthError(response.status);
 
     const detail =
       body &&
@@ -101,15 +107,16 @@ export async function apiGet<T>(
 export async function apiPost<T>(
   path: string,
   body: Record<string, unknown>,
+  options?: ApiRequestOptions,
 ): Promise<T> {
   const token = readAccessToken();
   const response = await fetch(buildUrl(path), {
+    ...options,
     method: "POST",
-    headers: {
+    headers: mergeHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...getTokenHeader(),
-    },
+    }, options?.headers, token),
     body: JSON.stringify(body),
   });
 
@@ -124,7 +131,7 @@ export async function apiPost<T>(
   }
 
   if (!response.ok) {
-    handleResponseAuthError(response.status, token);
+    handleResponseAuthError(response.status);
 
     const detail =
       responseBody &&
@@ -140,14 +147,18 @@ export async function apiPost<T>(
   return responseBody as T;
 }
 
-export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+  options?: ApiRequestOptions,
+): Promise<T> {
   const token = readAccessToken();
   const response = await fetch(buildUrl(path), {
+    ...options,
     method: "POST",
-    headers: {
+    headers: mergeHeaders({
       Accept: "application/json",
-      ...getTokenHeader(),
-    },
+    }, options?.headers, token),
     body: formData,
   });
 
@@ -162,7 +173,7 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
   }
 
   if (!response.ok) {
-    handleResponseAuthError(response.status, token);
+    handleResponseAuthError(response.status);
 
     const detail =
       responseBody &&
