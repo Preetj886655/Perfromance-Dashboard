@@ -4,6 +4,9 @@
  * Provides typed REST access to the Line Tracker backend endpoints.
  */
 
+import { buildApiUrl } from "../api/client";
+import { readAccessToken } from "../auth/storage";
+
 export interface LineTrackerWarning {
   code: string;
   severity: "warning" | "info" | "error";
@@ -263,24 +266,21 @@ export interface LineTrackerSummary {
 const API_BASE = "/api/v1/line-tracker";
 
 function authHeaders(): HeadersInit {
-  let token: string | null = null;
-  if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
-    try {
-      token = window.localStorage.getItem("auth_token") || window.sessionStorage?.getItem("auth_token");
-    } catch {
-      token = null;
-    }
-  }
   const headers: HeadersInit = { "Content-Type": "application/json" };
+  const token = readAccessToken();
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
   return headers;
 }
 
+function apiUrl(path: string): string {
+  return buildApiUrl(`${API_BASE}${path}`);
+}
+
 export async function fetchLineTrackerSummary(refresh = false): Promise<LineTrackerSummary> {
   const url = `${API_BASE}/summary?refresh=${refresh ? "true" : "false"}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch line tracker summary: ${resp.status} ${resp.statusText}`);
   }
@@ -411,7 +411,7 @@ export async function fetchLineTrackerEntries(
   }
 
   const url = `${API_BASE}/entries${query.toString() ? `?${query.toString()}` : ""}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch line tracker entries: ${resp.status} ${resp.statusText}`);
   }
@@ -436,7 +436,7 @@ export async function fetchLineTrackerOeeBreakdown(params?: {
   if (params?.refresh || params?.forceRefresh) query.set("refresh", "true");
 
   const url = `${API_BASE}/oee/breakdown?${query.toString()}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch Line Tracker OEE breakdown: ${resp.status} ${resp.statusText}`);
   }
@@ -444,7 +444,7 @@ export async function fetchLineTrackerOeeBreakdown(params?: {
 }
 
 export async function fetchLineTrackerOrders(): Promise<{ count: number; orders: LineTrackerProductionOrder[] }> {
-  const resp = await fetch(`${API_BASE}/orders`, { headers: authHeaders() });
+  const resp = await fetch(apiUrl("/orders"), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch production orders: ${resp.status} ${resp.statusText}`);
   }
@@ -457,7 +457,7 @@ export async function fetchLineTrackerPpcOrders(refresh = false): Promise<{
   summary: LineTrackerPpcSummary;
 }> {
   const url = `${API_BASE}/ppc/orders?refresh=${refresh ? "true" : "false"}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch PPC orders: ${resp.status} ${resp.statusText}`);
   }
@@ -466,7 +466,7 @@ export async function fetchLineTrackerPpcOrders(refresh = false): Promise<{
 
 export async function fetchLineTrackerMonthlyPlan(refresh = false): Promise<LineTrackerMonthlyPlanResponse> {
   const url = `${API_BASE}/ppc/monthly-plan?refresh=${refresh ? "true" : "false"}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch PPC monthly plan: ${resp.status} ${resp.statusText}`);
   }
@@ -475,7 +475,7 @@ export async function fetchLineTrackerMonthlyPlan(refresh = false): Promise<Line
 
 export async function fetchLineTrackerTraceability(refresh = false): Promise<LineTrackerTraceabilityResponse> {
   const url = `${API_BASE}/ppc/traceability?refresh=${refresh ? "true" : "false"}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch PPC traceability: ${resp.status} ${resp.statusText}`);
   }
@@ -483,7 +483,7 @@ export async function fetchLineTrackerTraceability(refresh = false): Promise<Lin
 }
 
 export async function fetchLineTrackerMachines(): Promise<{ count: number; machines: LineTrackerMachine[] }> {
-  const resp = await fetch(`${API_BASE}/machines`, { headers: authHeaders() });
+  const resp = await fetch(apiUrl("/machines"), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch machines: ${resp.status} ${resp.statusText}`);
   }
@@ -491,7 +491,7 @@ export async function fetchLineTrackerMachines(): Promise<{ count: number; machi
 }
 
 export async function fetchLineTrackerHeats(): Promise<{ count: number; heats: LineTrackerHeatReference[] }> {
-  const resp = await fetch(`${API_BASE}/heats`, { headers: authHeaders() });
+  const resp = await fetch(apiUrl("/heats"), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch heat reference catalog: ${resp.status} ${resp.statusText}`);
   }
@@ -651,7 +651,7 @@ export async function fetchLineTrackerReliability(params?: {
   if (params?.refresh) query.set("refresh", "true");
 
   const url = `${API_BASE}/reliability/pareto?${query.toString()}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch Line Tracker reliability: ${resp.status} ${resp.statusText}`);
   }
@@ -685,12 +685,10 @@ export async function fetchLineTrackerHistoricalRecords(params?: {
   if (params?.refresh) query.set("refresh", "true");
 
   const url = `${API_BASE}/reliability/records?${query.toString()}`;
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(buildApiUrl(url), { headers: authHeaders() });
   if (!resp.ok) {
     throw new Error(`Failed to fetch Line Tracker historical records: ${resp.status} ${resp.statusText}`);
   }
   return resp.json();
 }
-
-
 

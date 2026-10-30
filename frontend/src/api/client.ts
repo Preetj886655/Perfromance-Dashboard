@@ -27,7 +27,9 @@ export function buildApiUrl(
   query?: Record<string, string | number | undefined | null>,
 ): string {
   const base = API_BASE.replace(/\/$/, "");
-  const url = new URL(`${base}${path}`, window.location.origin);
+  const relativePath = `${base}${path}`;
+  const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+  const url = new URL(relativePath, origin);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined || value === null || value === "") continue;

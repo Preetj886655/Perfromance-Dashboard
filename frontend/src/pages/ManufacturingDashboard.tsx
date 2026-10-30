@@ -1264,7 +1264,7 @@ export function ManufacturingDashboard() {
     // Backoff between attempts: a momentarily unavailable backend (still
     // starting, network blip, proxy hiccup) must NOT become a permanent
     // "No Live Google Sheets Connection" dead end.
-    const retryDelays = [1500, 3000, 6000];
+    const retryDelays = [500, 1500, 3000];
 
     setLiveLoading(true);
     setLiveLoadError(null);
@@ -1319,17 +1319,13 @@ export function ManufacturingDashboard() {
     const initial = options?.initial ?? false;
 
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    const retryDelays = [1500, 3000, 6000];
+    const retryDelays = [500, 1500, 3000];
     let data: ManufacturingApiResponse | null = null;
     let lastError = "Unable to load the live dataset.";
 
-    let liveWorksheet = DEFAULT_GOOGLE_SHEET_WORKSHEET;
-    try {
-      const statusResponse = await fetchManufacturingStatus(spreadsheetId);
-      liveWorksheet = statusResponse.worksheet || liveWorksheet;
-    } catch {
-      // Fall back to the configured default worksheet name when the status probe fails.
-    }
+    // The bootstrap status request already verified the source. Avoid a
+    // second Google Sheets round-trip before loading the dataset.
+    const liveWorksheet = currentWorksheet || DEFAULT_GOOGLE_SHEET_WORKSHEET;
 
     for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
       try {
@@ -1381,7 +1377,7 @@ export function ManufacturingDashboard() {
       // but flag the connection state (never silently fake LIVE).
       setLiveDataset((prev) => (prev ? { ...prev, connectionStatus: "error" as const, error: lastError } : prev));
     }
-  }, [isAuthenticated]);
+  }, [currentWorksheet, isAuthenticated]);
 
   // Fetch Google Sheets data when currentSpreadsheetId is set. The initial
   // bootstrap path owns the loading/error state until the dataset arrives.
@@ -1424,7 +1420,7 @@ export function ManufacturingDashboard() {
     spreadsheetId: currentSpreadsheetId,
     worksheet: currentWorksheet,
     pollingInterval,
-    enabled: autoRefreshEnabled && currentSpreadsheetId.length > 0,
+    enabled: autoRefreshEnabled && currentSpreadsheetId.length > 0 && Boolean(liveDataset),
     authenticated: isAuthenticated,
     onDataUpdate: (response) => {
       // When data changes (or a manual refresh completes), update BOTH the
