@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -13,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import DEFAULT_AUTH_SECRET_KEY, settings
 from app.db.session import get_db
 from app.models.user import User
 
@@ -22,11 +21,7 @@ security_scheme = HTTPBearer(auto_error=False)
 
 def _token_secret() -> str:
     configured = (settings.auth_secret_key or "").strip()
-    if configured:
-        return configured
-    if not hasattr(_token_secret, "generated_secret"):
-        _token_secret.generated_secret = secrets.token_urlsafe(32)
-    return _token_secret.generated_secret
+    return configured or DEFAULT_AUTH_SECRET_KEY
 
 
 def hash_password(password: str) -> str:

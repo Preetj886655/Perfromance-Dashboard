@@ -1,4 +1,5 @@
 import { clearAccessToken, readAccessToken, saveAccessToken } from "./storage";
+import { buildApiUrl } from "../api/client";
 import type { AuthUser, LoginCredentials, LoginResponse } from "./authTypes";
 
 const AUTH_BASE = "/api/v1/auth";
@@ -49,7 +50,7 @@ async function parseError(response: Response): Promise<string> {
 }
 
 export async function loginWithCredentials(credentials: LoginCredentials): Promise<AuthUser> {
-  const response = await fetch(`${AUTH_BASE}/login`, {
+  const response = await fetch(buildApiUrl(`${AUTH_BASE}/login`), {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify(credentials),
@@ -73,7 +74,7 @@ export async function loginWithCredentials(credentials: LoginCredentials): Promi
 }
 
 export async function fetchCurrentUser(token = readAccessToken() ?? undefined): Promise<AuthUser> {
-  const response = await fetch(`${AUTH_BASE}/me`, {
+  const response = await fetch(buildApiUrl(`${AUTH_BASE}/me`), {
     method: "GET",
     headers: buildHeaders(token),
   });

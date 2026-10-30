@@ -21,8 +21,7 @@ target_metadata = Base.metadata
 
 # Always drive migrations from app Settings (not a stale/blank alembic.ini URL).
 # set_main_option keeps offline SQL generation and Alembic CLI URL display in sync.
-config.set_main_option("sqlalchemy.url", settings.database_url)
-
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 def _log_target_database(connection) -> None:
     """Print the live connection fingerprint so wrong-DB mistakes are obvious."""

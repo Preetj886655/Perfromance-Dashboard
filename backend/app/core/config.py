@@ -10,6 +10,7 @@ from sqlalchemy.engine import make_url
 # Resolve .env relative to this file so it works regardless of the CWD
 # from which uvicorn is launched (e.g., project root vs backend/).
 _ENV_FILE = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+DEFAULT_AUTH_SECRET_KEY = "dev-token-secret"
 
 
 class Settings(BaseSettings):
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
 
     auth_secret_key: str = ""
     auth_algorithm: str = "HS256"
-    auth_access_token_expire_minutes: int = 60
+    auth_access_token_expire_minutes: int = 600
 
     google_sheets_spreadsheet_id: str = ""
     google_sheets_worksheet_name: str = ""

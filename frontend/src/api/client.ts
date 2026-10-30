@@ -22,7 +22,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-function buildUrl(
+export function buildApiUrl(
   path: string,
   query?: Record<string, string | number | undefined | null>,
 ): string {
@@ -69,7 +69,7 @@ export async function apiGet<T>(
   options?: ApiRequestOptions,
 ): Promise<T> {
   const token = readAccessToken();
-  const response = await fetch(buildUrl(path, query), {
+  const response = await fetch(buildApiUrl(path, query), {
     ...options,
     method: "GET",
     headers: mergeHeaders({
@@ -110,7 +110,7 @@ export async function apiPost<T>(
   options?: ApiRequestOptions,
 ): Promise<T> {
   const token = readAccessToken();
-  const response = await fetch(buildUrl(path), {
+  const response = await fetch(buildApiUrl(path), {
     ...options,
     method: "POST",
     headers: mergeHeaders({
@@ -153,7 +153,7 @@ export async function apiUpload<T>(
   options?: ApiRequestOptions,
 ): Promise<T> {
   const token = readAccessToken();
-  const response = await fetch(buildUrl(path), {
+  const response = await fetch(buildApiUrl(path), {
     ...options,
     method: "POST",
     headers: mergeHeaders({

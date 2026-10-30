@@ -18,6 +18,7 @@ from typing import Any
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from app.core.config import settings
 
@@ -334,17 +335,32 @@ def _get_credentials_info() -> dict[str, Any] | None:
     if os.path.exists(raw):
         try:
             with open(raw, encoding="utf-8") as handle:
-                return json.load(handle)
+                parsed = json.load(handle)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Google service account JSON file is invalid: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("Google service account JSON must be an object.")
+        return _normalize_credentials(parsed)
 
     # 2. Resolve as inline JSON string
+    inline_values = [raw]
     try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            return parsed
-    except (json.JSONDecodeError, TypeError):
+        # Render may receive a JSON object as a quoted/escaped env value.
+        unwrapped = json.loads(raw)
+        if isinstance(unwrapped, str):
+            inline_values.insert(0, unwrapped)
+        elif isinstance(unwrapped, dict):
+            return _normalize_credentials(unwrapped)
+    except json.JSONDecodeError:
         pass
+
+    for candidate in inline_values:
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            return _normalize_credentials(parsed)
 
     # 3. Resolve as Base64-encoded JSON string (useful for multi-line env var in Render)
     try:
@@ -353,11 +369,41 @@ def _get_credentials_info() -> dict[str, Any] | None:
         decoded = base64.b64decode(raw.strip()).decode("utf-8")
         parsed = json.loads(decoded)
         if isinstance(parsed, dict):
-            return parsed
-    except Exception:
+            return _normalize_credentials(parsed)
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
         pass
 
-    return None
+    raise ValueError(
+        "Google service account credentials are not valid JSON. "
+        "Set GOOGLE_SERVICE_ACCOUNT_JSON to the complete service-account JSON object."
+    )
+
+
+def _normalize_credentials(credentials: dict[str, Any]) -> dict[str, Any]:
+    """Normalize credential JSON transported through hosting environment variables."""
+    normalized = dict(credentials)
+    private_key = normalized.get("private_key")
+    if isinstance(private_key, str):
+        normalized["private_key"] = private_key.replace("\\n", "\n")
+    if not normalized.get("client_email") or not normalized.get("private_key"):
+        raise ValueError(
+            "Google service account credentials are missing client_email or private_key."
+        )
+    return normalized
+
+
+def _format_google_sheets_error(exc: Exception) -> str:
+    if isinstance(exc, HttpError):
+        if exc.resp.status == 403:
+            return (
+                "Google Sheets access denied. Share the spreadsheet with the service "
+                "account email and grant Viewer access."
+            )
+        if exc.resp.status == 404:
+            return "Google Sheets spreadsheet was not found. Check GOOGLE_SHEETS_SPREADSHEET_ID."
+    if isinstance(exc, (ValueError, TypeError)):
+        return str(exc)
+    return f"Google Sheets request failed: {exc}"
 
 
 _WORKSHEET_NAME_ENV_VARS = (
@@ -572,7 +618,7 @@ def get_google_sheet_status(
         return build_google_sheet_status(
             spreadsheet_id=resolved_id,
             worksheet_name=resolved_worksheet or "Sheet1",
-            error_message=str(exc),
+            error_message=_format_google_sheets_error(exc),
             record_count=0,
             last_successful_sync=None,
         )
@@ -687,7 +733,7 @@ def fetch_google_sheet_dataset(
             "cacheHit": False,
             "lastUpdated": (stale["payload"].get("lastUpdated") if stale else None),
             "columnMismatches": [],
-            "error": str(exc),
+            "error": _format_google_sheets_error(exc),
             "status": "offline",
             "connectionStatus": "offline",
             "data": (stale["payload"].get("data", []) if stale else []),
