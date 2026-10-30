@@ -3,7 +3,7 @@
 import os
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -89,6 +89,15 @@ class Settings(BaseSettings):
     postgres_db: str = "pril_analytics"
     postgres_user: str = "pril"
     postgres_password: str = "pril_dev_password"
+
+    @model_validator(mode="after")
+    def validate_production_auth_secret(self) -> "Settings":
+        if self.app_env.strip().lower() == "production" and not self.auth_secret_key.strip():
+            raise ValueError(
+                "AUTH_SECRET_KEY must be configured when APP_ENV=production. "
+                "Use one stable secret for every Render instance."
+            )
+        return self
 
     @property
     def database_url(self) -> str:
