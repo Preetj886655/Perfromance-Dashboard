@@ -1110,7 +1110,7 @@ const STUB_ROUTES: PageRoute[] = [
 ];
 
 export function ManufacturingDashboard() {
-  const { logout } = useAuth();
+  const { logout, isAuthenticated } = useAuth();
   const [activePage, setActivePage] = useState<PageRoute>(resolveHashRoute());
   const [activeWorksheetKey, setActiveWorksheetKey] = useState<string | null>(resolveWorksheetKey);
   const [liveActiveSlideId, setLiveActiveSlideId] = useState<string>(() => mapRouteToSlideId(resolveHashRoute()));
@@ -1254,6 +1254,8 @@ export function ManufacturingDashboard() {
   const bootstrapRunRef = useRef(0);
 
   const bootstrapLiveConnection = useCallback(async () => {
+    if (!isAuthenticated) return;
+
     const runId = bootstrapRunRef.current + 1;
     bootstrapRunRef.current = runId;
     const isLatestRun = () => bootstrapRunRef.current === runId;
@@ -1298,21 +1300,22 @@ export function ManufacturingDashboard() {
     // the (optional) polling hook, and triggers the dataset load below.
     setCurrentSpreadsheetId(status.spreadsheetId);
     setCurrentWorksheet(status.worksheet || DEFAULT_GOOGLE_SHEET_WORKSHEET);
-  }, []);
+  }, [isAuthenticated]);
 
   // Fetch backend Google Sheets configuration on mount to enable live polling
   // and auto-load the LIVE dataset so the dashboard shows live data immediately.
   // IMPORTANT: This ONLY updates liveDataset — never touches uploadedDataset.
   useEffect(() => {
+    if (!isAuthenticated) return;
     void bootstrapLiveConnection();
-  }, [bootstrapLiveConnection]);
+  }, [isAuthenticated, bootstrapLiveConnection]);
 
   // Fetch (or re-fetch) the live Google Sheets dataset.
   // STRICT SEPARATION: Only updates liveDataset — never touches uploadedDataset.
   // Retries transient failures; the INITIAL load (initial=true) surfaces a
   // final failure through the explicit error state instead of dying silently.
   const reloadLiveDataset = useCallback(async (spreadsheetId: string, options?: { initial?: boolean }) => {
-    if (!spreadsheetId) return;
+    if (!isAuthenticated || !spreadsheetId) return;
     const initial = options?.initial ?? false;
 
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1378,14 +1381,14 @@ export function ManufacturingDashboard() {
       // but flag the connection state (never silently fake LIVE).
       setLiveDataset((prev) => (prev ? { ...prev, connectionStatus: "error" as const, error: lastError } : prev));
     }
-  }, []);
+  }, [isAuthenticated]);
 
   // Fetch Google Sheets data when currentSpreadsheetId is set. The initial
   // bootstrap path owns the loading/error state until the dataset arrives.
   useEffect(() => {
-    if (!currentSpreadsheetId) return;
+    if (!isAuthenticated || !currentSpreadsheetId) return;
     void reloadLiveDataset(currentSpreadsheetId, { initial: true });
-  }, [currentSpreadsheetId, reloadLiveDataset]);
+  }, [isAuthenticated, currentSpreadsheetId, reloadLiveDataset]);
 
   useEffect(() => {
     const sync = () => {
@@ -1422,6 +1425,7 @@ export function ManufacturingDashboard() {
     worksheet: currentWorksheet,
     pollingInterval,
     enabled: autoRefreshEnabled && currentSpreadsheetId.length > 0,
+    authenticated: isAuthenticated,
     onDataUpdate: (response) => {
       // When data changes (or a manual refresh completes), update BOTH the
       // live dashboard dataset (which renders the analytics) and the legacy

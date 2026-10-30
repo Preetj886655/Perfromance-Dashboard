@@ -28,6 +28,7 @@ interface UseManufacturingLivePollingOptions {
   worksheet?: string;
   pollingInterval?: number; // milliseconds
   enabled?: boolean;
+  authenticated?: boolean;
   onDataUpdate?: (data: ManufacturingApiResponse) => void;
   onStatusChange?: (status: LiveSyncStatus) => void;
 }
@@ -55,6 +56,7 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
     worksheet,
     pollingInterval = DEFAULT_POLLING_INTERVAL,
     enabled = true,
+    authenticated = true,
     onDataUpdate,
     onStatusChange,
   } = options;
@@ -80,9 +82,8 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
   );
 
   const pollStatus = useCallback(async () => {
-    // NOTE: `enabled` gates only the background polling interval. Manual
-    // refresh must always work when a spreadsheet is configured.
-    if (!spreadsheetId) return;
+    // Authentication gates both automatic and manual requests.
+    if (!authenticated || !spreadsheetId) return;
 
     try {
       setStatus((prev) => ({ ...prev, state: 'polling' }));
@@ -130,12 +131,11 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
         onStatusChange(newStatus);
       }
     }
-  }, [spreadsheetId, worksheet, onStatusChange]);
+  }, [authenticated, spreadsheetId, worksheet, onStatusChange]);
 
   const fetchAndDetectChanges = useCallback(async (forceRefresh = false) => {
-    // NOTE: `enabled` gates only the background polling interval. Manual
-    // refresh must always work when a spreadsheet is configured.
-    if (!spreadsheetId) return;
+    // Authentication gates both automatic and manual requests.
+    if (!authenticated || !spreadsheetId) return;
 
     try {
       setStatus((prev) => ({ ...prev, state: 'syncing' }));
@@ -203,7 +203,7 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
         onStatusChange(newStatus);
       }
     }
-  }, [spreadsheetId, worksheet, onDataUpdate, onStatusChange]);
+  }, [authenticated, spreadsheetId, worksheet, onDataUpdate, onStatusChange]);
 
   const refresh = useCallback(async () => {
     // A user-initiated refresh is a REAL refresh: poll status, then force a
@@ -213,7 +213,7 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
   }, [pollStatus, fetchAndDetectChanges]);
 
   useEffect(() => {
-    if (!enabled || !spreadsheetId) return;
+    if (!enabled || !authenticated || !spreadsheetId) return;
 
     // Poll status immediately
     pollStatus();
@@ -232,7 +232,7 @@ export function useManufacturingLivePolling(options: UseManufacturingLivePolling
         clearInterval(pollingTimeoutRef.current);
       }
     };
-  }, [enabled, spreadsheetId, validatedInterval, pollStatus, fetchAndDetectChanges]);
+  }, [enabled, authenticated, spreadsheetId, validatedInterval, pollStatus, fetchAndDetectChanges]);
 
   useEffect(() => {
     return () => {

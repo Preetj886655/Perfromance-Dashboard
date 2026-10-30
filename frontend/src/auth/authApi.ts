@@ -80,7 +80,7 @@ export async function fetchCurrentUser(token = readAccessToken() ?? undefined): 
 
   if (!response.ok) {
     const message = await parseError(response);
-    if (response.status === 401) {
+    if (response.status === 401 && token && readAccessToken() === token) {
       clearAccessToken();
       emitAuthEvent(AUTH_EVENT_EXPIRED, message);
     } else if (response.status === 403) {

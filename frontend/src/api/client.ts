@@ -3,7 +3,7 @@
  * Uses VITE_API_BASE_URL when set; otherwise same-origin (Vite proxy /api).
  */
 
-import { clearAccessToken } from "../auth/storage";
+import { clearAccessToken, readAccessToken } from "../auth/storage";
 import type { ApiError } from "../types/dashboard";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
@@ -41,14 +41,28 @@ function buildUrl(
 }
 
 function getTokenHeader(): Record<string, string> {
-  const token = window.localStorage.getItem("pril_access_token");
+  const token = readAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function handleResponseAuthError(status: number, requestToken: string | null): void {
+  // An unauthenticated request can legitimately receive 401 (for example
+  // during initial app hydration). It must not clear a token that may have
+  // been saved by a concurrent login flow.
+  if (status === 401 && requestToken && readAccessToken() === requestToken) {
+    clearAccessToken();
+    window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
+  }
+  if (status === 403) {
+    window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
+  }
 }
 
 export async function apiGet<T>(
   path: string,
   query?: Record<string, string | number | undefined | null>,
 ): Promise<T> {
+  const token = readAccessToken();
   const response = await fetch(buildUrl(path, query), {
     method: "GET",
     headers: {
@@ -68,13 +82,7 @@ export async function apiGet<T>(
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      clearAccessToken();
-      window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
-    }
-    if (response.status === 403) {
-      window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
-    }
+    handleResponseAuthError(response.status, token);
 
     const detail =
       body &&
@@ -94,6 +102,7 @@ export async function apiPost<T>(
   path: string,
   body: Record<string, unknown>,
 ): Promise<T> {
+  const token = readAccessToken();
   const response = await fetch(buildUrl(path), {
     method: "POST",
     headers: {
@@ -115,13 +124,7 @@ export async function apiPost<T>(
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      clearAccessToken();
-      window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
-    }
-    if (response.status === 403) {
-      window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
-    }
+    handleResponseAuthError(response.status, token);
 
     const detail =
       responseBody &&
@@ -138,6 +141,7 @@ export async function apiPost<T>(
 }
 
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const token = readAccessToken();
   const response = await fetch(buildUrl(path), {
     method: "POST",
     headers: {
@@ -158,13 +162,7 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      clearAccessToken();
-      window.dispatchEvent(new CustomEvent("pril:auth-expired", { detail: "Session expired" }));
-    }
-    if (response.status === 403) {
-      window.dispatchEvent(new CustomEvent("pril:auth-forbidden", { detail: "Access denied" }));
-    }
+    handleResponseAuthError(response.status, token);
 
     const detail =
       responseBody &&
