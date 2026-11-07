@@ -40,6 +40,19 @@ export function DashboardCarousel({
     }
     return 0;
   });
+  // Lazy slide mounting: only mount slide contents when they are visited (or adjacent)
+  // to avoid rendering 40+ ECharts instances simultaneously on initial load.
+  const [visitedIndices, setVisitedIndices] = useState<Set<number>>(() => new Set([currentIndex]));
+
+  useEffect(() => {
+    setVisitedIndices((prev) => {
+      if (prev.has(currentIndex)) return prev;
+      const next = new Set(prev);
+      next.add(currentIndex);
+      return next;
+    });
+  }, [currentIndex]);
+
   const [isPaused, setIsPaused] = useState(false);
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -291,7 +304,9 @@ export function DashboardCarousel({
                 <span className="dashboard-carousel__slide-icon" aria-hidden="true">{slide.icon}</span>
                 <h2 className="dashboard-carousel__slide-title">{slide.title}</h2>
               </div>
-              <div className={`dashboard-carousel__slide-content${slide.id === "executive" ? " dashboard-carousel__slide-content--full-page" : ""}`}>{slide.content}</div>
+              <div className={`dashboard-carousel__slide-content${slide.id === "executive" ? " dashboard-carousel__slide-content--full-page" : ""}`}>
+                {visitedIndices.has(index) ? slide.content : null}
+              </div>
             </div>
           ))}
         </div>

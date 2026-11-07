@@ -121,8 +121,11 @@ def _sheet_rows(dates: list[str]) -> list[list[object]]:
 
 
 def _clear_cache():
-    with svc._CACHE_LOCK:
-        svc._CACHE.clear()
+    if hasattr(svc, "clear_cache"):
+        svc.clear_cache()
+    else:
+        with svc._CACHE_LOCK:
+            svc._CACHE.clear()
 
 
 def _fetch(key: str, refresh: bool = False):

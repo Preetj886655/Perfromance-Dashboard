@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import calendar
+import hashlib
+import json
+import os
+import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from math import floor, isclose
+from pathlib import Path
+from threading import Lock
 from typing import Any
 
+from app.core.config import settings
 from app.services.line_tracker_machine_assets_service import get_machine_master_analytics
 from app.services.line_tracker_shift_manpower_service import get_shift_entries_analytics
 from app.services.line_tracker_worksheet_service import (
@@ -38,6 +46,52 @@ _DOWNTIME_MIRROR_START = 14569
 _DOWNTIME_MIRROR_END = 14868
 _READ_PAGE_SIZE = 200
 _MAX_ROWS = 20000
+_DASHBOARD_CACHE_TTL_SECONDS = max(
+    300,
+    int(os.getenv("LINE_TRACKER_DASHBOARD_CACHE_TTL_SECONDS", "86400")),
+)
+_DASHBOARD_CACHE_DIR = Path(__file__).resolve().parents[3] / ".cache" / "line_tracker_dashboards"
+_DASHBOARD_CACHE_LOCK = Lock()
+
+
+def _dashboard_cache_path(cache_key: str) -> Path:
+    digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
+    return _DASHBOARD_CACHE_DIR / f"{digest}.json"
+
+
+def _load_dashboard_cache(cache_key: str) -> dict[str, Any] | None:
+    if settings.line_tracker_source.strip().casefold() != "google_sheets":
+        return None
+    path = _dashboard_cache_path(cache_key)
+    try:
+        with _DASHBOARD_CACHE_LOCK:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        if time.time() - float(payload["saved_at"]) >= _DASHBOARD_CACHE_TTL_SECONDS:
+            return None
+        response = payload.get("response")
+        return response if isinstance(response, dict) else None
+    except (OSError, TypeError, ValueError, KeyError):
+        return None
+
+
+def _save_dashboard_cache(cache_key: str, response: dict[str, Any]) -> None:
+    if settings.line_tracker_source.strip().casefold() != "google_sheets":
+        return
+    path = _dashboard_cache_path(cache_key)
+    try:
+        _DASHBOARD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_suffix(".tmp")
+        with _DASHBOARD_CACHE_LOCK:
+            temporary_path.write_text(
+                json.dumps(
+                    {"saved_at": time.time(), "response": response},
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            temporary_path.replace(path)
+    except (OSError, TypeError, ValueError):
+        return
 
 
 def _number(value: Any) -> float | None:
@@ -67,7 +121,10 @@ def _date_value(value: Any) -> date | None:
     try:
         return date.fromisoformat(str(value)[:10])
     except (TypeError, ValueError):
-        return None
+        try:
+            return datetime.strptime(str(value).strip(), "%d-%m-%Y").date()
+        except (TypeError, ValueError):
+            return None
 
 
 def _grid_source(key: str, *, refresh: bool) -> dict[str, Any]:
@@ -193,26 +250,54 @@ def _downtime_source(*, refresh: bool) -> dict[str, Any]:
 
 
 def _downtime_records(source: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    headers = [str(value or "").strip().casefold() for value in source.get("headers", [])[1:]]
-    expected_headers = [
+    headers = [
+        " ".join(str(value or "").split()).casefold()
+        for value in source.get("headers", [])[1:]
+    ]
+    header_aliases = {
+        "date": {"date"},
+        "line": {"line"},
+        "shift": {"shift"},
+        "part": {"part"},
+        "stage": {"stage"},
+        "machine": {"machine"},
+        "downtime_type": {"downtime type", "downtime type (raw)"},
+        "category": {"downtime category"},
+        "breakdown_type": {"breakdown type"},
+        "downtime_min": {"downtime mins", "downtime mints"},
+        "production_loss": {"prod loss nos"},
+        "target_nos": {"prod target nos"},
+        "actual_nos": {"total prod nos"},
+    }
+    indexes: dict[str, int] = {}
+    for field, aliases in header_aliases.items():
+        index = next((i for i, header in enumerate(headers) if header in aliases), None)
+        if index is not None:
+            indexes[field] = index
+    required_fields = (
         "date",
         "line",
         "shift",
         "part",
         "stage",
         "machine",
-        "downtime type (raw)",
-        "downtime category",
-        "breakdown type",
-        "downtime mins",
-        "prod loss nos",
-        "prod target nos",
-        "total prod nos",
-        "rejection",
-        "description",
-    ]
-    if headers[: len(expected_headers)] != expected_headers:
-        raise WorksheetReadError("Downtime Log has an unexpected live header schema.")
+        "downtime_type",
+        "downtime_min",
+        "production_loss",
+        "target_nos",
+        "actual_nos",
+    )
+    missing_fields = [field for field in required_fields if field not in indexes]
+    if missing_fields:
+        raise WorksheetReadError(
+            "Downtime Log has an unexpected live header schema; "
+            f"missing required columns: {', '.join(missing_fields)}."
+        )
+
+    def value_at(row: list[Any], field: str) -> Any:
+        index = indexes.get(field)
+        return row[index] if index is not None and index < len(row) else None
+
     records: list[dict[str, Any]] = []
     mirror_source_rows = 0
     invalid_dates = 0
@@ -222,7 +307,7 @@ def _downtime_records(source: dict[str, Any]) -> tuple[list[dict[str, Any]], dic
             mirror_source_rows += 1
             continue
         row = source_record["values"][1:]
-        parsed_date = _date_value(row[0])
+        parsed_date = _date_value(value_at(row, "date"))
         if parsed_date is None:
             invalid_dates += 1
             continue
@@ -231,17 +316,17 @@ def _downtime_records(source: dict[str, Any]) -> tuple[list[dict[str, Any]], dic
             {
                 "source_row": row_number,
                 "date": parsed_date.isoformat(),
-                "line": _text(row[1]),
-                "shift": _text(row[2]),
-                "part": _text(row[3]),
-                "stage": _text(row[4]),
-                "machine": _text(row[5]),
-                "category": _text(row[7]),
-                "breakdown_type": _text(row[8]),
-                "downtime_min": _number(row[9]),
-                "production_loss": _number(row[10]),
-                "target_nos": _number(row[11]),
-                "actual_nos": _number(row[12]),
+                "line": _text(value_at(row, "line")),
+                "shift": _text(value_at(row, "shift")),
+                "part": _text(value_at(row, "part")),
+                "stage": _text(value_at(row, "stage")),
+                "machine": _text(value_at(row, "machine")),
+                "category": _text(value_at(row, "category")),
+                "breakdown_type": _text(value_at(row, "breakdown_type")),
+                "downtime_min": _number(value_at(row, "downtime_min")),
+                "production_loss": _number(value_at(row, "production_loss")),
+                "target_nos": _number(value_at(row, "target_nos")),
+                "actual_nos": _number(value_at(row, "actual_nos")),
             }
         )
     grid_rows = source["worksheet"].get("grid_row_count") or 0
@@ -699,9 +784,25 @@ def get_dashboard_summary(
     date_to: str = "",
     refresh: bool = False,
 ) -> dict[str, Any]:
-    summary_source = _grid_source("summary", refresh=refresh)
+    cache_key = f"summary:{date_from}:{date_to}"
+    if not refresh:
+        cached = _load_dashboard_cache(cache_key)
+        if cached is not None:
+            return {**cached, "cache_hit": True}
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        summary_future = executor.submit(_grid_source, "summary", refresh=refresh)
+        downtime_future = executor.submit(_downtime_source, refresh=refresh)
+        entries_future = executor.submit(
+            get_shift_entries_analytics,
+            page_size=100,
+            refresh=refresh,
+        )
+        summary_source = summary_future.result()
+        downtime_source = downtime_future.result()
+        entries_data = entries_future.result()
+
     _validate_grid_header(summary_source, row_number=5, expected=_EXPECTED_HEADERS["summary"])
-    downtime_source = _downtime_source(refresh=refresh)
     downtime_rows, data_quality = _downtime_records(downtime_source)
     if not downtime_rows:
         raise WorksheetReadError("Downtime Log contains no valid historical records.")
@@ -812,9 +913,8 @@ def get_dashboard_summary(
             cursor.year + (cursor.month == 12), 1 if cursor.month == 12 else cursor.month + 1, 1
         )
 
-    entries_data = get_shift_entries_analytics(page_size=100, refresh=refresh)
     availability = _entry_summaries(entries_data["records"])
-    return {
+    response = {
         **_source_state(
             summary=summary_source,
             downtime_log=downtime_source,
@@ -847,6 +947,8 @@ def get_dashboard_summary(
             "formula_zero_missing_downtime_periods": formula_zero_missing_downtime_periods,
         },
     }
+    _save_dashboard_cache(cache_key, response)
+    return response
 
 
 def _period_rows_for_label(records: list[dict[str, Any]], label: str) -> list[dict[str, Any]]:

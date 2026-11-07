@@ -28,10 +28,70 @@ _SPREADSHEET_ID_ENV_VARS = (
     "GOOGLE_SPREADSHEET_ID",
 )
 
-_GOOGLE_SHEETS_CACHE_TTL_SECONDS = max(30, int(os.getenv("GOOGLE_SHEETS_CACHE_TTL_SECONDS", "45")))
+_GOOGLE_SHEETS_CACHE_TTL_SECONDS = max(30, int(os.getenv("GOOGLE_SHEETS_CACHE_TTL_SECONDS", "300")))
 
 _CACHE: dict[str, dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
+_SINGLE_FLIGHT_LOCK = Lock()
+
+_DISK_CACHE_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", ".cache", "google_sheets")
+)
+
+
+def _col_to_letter(col_idx: int) -> str:
+    """Convert 1-based column index to letter (e.g. 1 -> A, 17 -> Q, 26 -> Z)."""
+    result = []
+    c = col_idx
+    while c > 0:
+        c, rem = divmod(c - 1, 26)
+        result.append(chr(65 + rem))
+    return "".join(reversed(result)) or "Z"
+
+
+def _get_disk_cache_path(cache_key: str) -> str:
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", cache_key)
+    return os.path.join(_DISK_CACHE_DIR, f"{safe_name}.json")
+
+
+def _save_to_disk_cache(cache_key: str, payload: dict[str, Any]) -> None:
+    try:
+        os.makedirs(_DISK_CACHE_DIR, exist_ok=True)
+        path = _get_disk_cache_path(cache_key)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"saved_at": time.time(), "payload": payload}, f)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _load_from_disk_cache(cache_key: str) -> dict[str, Any] | None:
+    try:
+        path = _get_disk_cache_path(cache_key)
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            wrapper = json.load(f)
+        return wrapper.get("payload")
+    except Exception:
+        return None
+
+
+def clear_cache() -> None:
+    """Clear both in-memory cache and persistent disk cache."""
+    with _CACHE_LOCK:
+        _CACHE.clear()
+    try:
+        if os.path.exists(_DISK_CACHE_DIR):
+            for fname in os.listdir(_DISK_CACHE_DIR):
+                if fname.endswith(".json") or fname.endswith(".tmp"):
+                    try:
+                        os.remove(os.path.join(_DISK_CACHE_DIR, fname))
+                    except OSError:
+                        pass
+    except Exception:
+        pass
 
 _ALIAS_MAP = {
     "slno": "slNo",
@@ -505,7 +565,9 @@ def _fetch_sheet_values_with_metadata(
     )
     properties = resolved_sheet.get("properties") or {}
     escaped_title = resolved_worksheet_name.replace("'", "''")
-    worksheet_range = f"'{escaped_title}'!A:ZZ"
+    grid_cols = (properties.get("gridProperties") or {}).get("columnCount") or 26
+    col_letter = _col_to_letter(min(max(grid_cols, 1), 52))
+    worksheet_range = f"'{escaped_title}'!A:{col_letter}"
     response = (
         service.spreadsheets()
         .values()
@@ -603,16 +665,48 @@ def get_google_sheet_status(
             last_successful_sync=None,
         )
 
-    try:
-        worksheet, rows, _ = _fetch_sheet_values(resolved_id, resolved_worksheet)
-        record_count = len(normalize_google_sheet_rows(rows))
-        last_successful_sync = datetime.now(UTC).isoformat()
+    cache_key = f"{resolved_id}:{resolved_worksheet}"
+    now = time.monotonic()
+
+    # 1. Fast in-memory cache check
+    with _CACHE_LOCK:
+        cached = _CACHE.get(cache_key)
+        if cached and (now - cached.get("fetched_at", 0)) < _GOOGLE_SHEETS_CACHE_TTL_SECONDS:
+            payload = cached["payload"]
+            return build_google_sheet_status(
+                spreadsheet_id=resolved_id,
+                worksheet_name=payload.get("worksheet", resolved_worksheet),
+                error_message=payload.get("error"),
+                record_count=payload.get("recordCount", 0),
+                last_successful_sync=payload.get("lastUpdated"),
+            )
+
+    # 2. Fast disk cache check
+    disk_payload = _load_from_disk_cache(cache_key)
+    if disk_payload and disk_payload.get("data"):
+        with _CACHE_LOCK:
+            _CACHE[cache_key] = {"fetched_at": now, "payload": disk_payload}
         return build_google_sheet_status(
             spreadsheet_id=resolved_id,
-            worksheet_name=worksheet,
-            error_message=None,
-            record_count=record_count,
-            last_successful_sync=last_successful_sync,
+            worksheet_name=disk_payload.get("worksheet", resolved_worksheet),
+            error_message=disk_payload.get("error"),
+            record_count=disk_payload.get("recordCount", 0),
+            last_successful_sync=disk_payload.get("lastUpdated"),
+        )
+
+    # 3. If neither cache hit, fetch once via fetch_google_sheet_dataset so both status & data share cache
+    try:
+        dataset = fetch_google_sheet_dataset(
+            spreadsheet_id=resolved_id,
+            worksheet_name=resolved_worksheet,
+            refresh=False,
+        )
+        return build_google_sheet_status(
+            spreadsheet_id=resolved_id,
+            worksheet_name=dataset.get("worksheet", resolved_worksheet),
+            error_message=dataset.get("error"),
+            record_count=dataset.get("recordCount", 0),
+            last_successful_sync=dataset.get("lastUpdated"),
         )
     except Exception as exc:  # pragma: no cover - network bound condition
         return build_google_sheet_status(
@@ -661,10 +755,18 @@ def fetch_google_sheet_dataset(
             cached = _CACHE.get(cache_key)
             if cached and (now - cached["fetched_at"]) < _GOOGLE_SHEETS_CACHE_TTL_SECONDS:
                 payload = cached["payload"]
-                # Annotate a copy so the cached payload itself stays cacheHit-free.
                 annotated = dict(payload)
                 annotated["cacheHit"] = True
                 return annotated
+
+        # Check persistent disk cache
+        disk_payload = _load_from_disk_cache(cache_key)
+        if disk_payload and disk_payload.get("data"):
+            with _CACHE_LOCK:
+                _CACHE[cache_key] = {"fetched_at": now, "payload": disk_payload}
+            annotated = dict(disk_payload)
+            annotated["cacheHit"] = True
+            return annotated
 
     if not resolved_id:
         payload = {
@@ -684,6 +786,7 @@ def fetch_google_sheet_dataset(
         }
         with _CACHE_LOCK:
             _CACHE[cache_key] = {"fetched_at": now, "payload": payload}
+        _save_to_disk_cache(cache_key, payload)
         return payload
 
     try:
@@ -716,6 +819,7 @@ def fetch_google_sheet_dataset(
         }
         with _CACHE_LOCK:
             _CACHE[cache_key] = {"fetched_at": now, "payload": payload}
+        _save_to_disk_cache(cache_key, payload)
         return payload
     except Exception as exc:
         stale = None

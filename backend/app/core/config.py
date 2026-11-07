@@ -52,7 +52,9 @@ class Settings(BaseSettings):
     # "google_sheets" (reads the live Google Sheet via the service account, falls back
     # to local Excel automatically if the sheet can't be fetched).
     line_tracker_source: str = "local_excel"
-    line_tracker_cache_ttl_seconds: int = 300
+    # Line Tracker source changes once per day; keep the parsed worksheet cache
+    # warm between requests and backend restarts unless manually refreshed.
+    line_tracker_cache_ttl_seconds: int = 86400
 
     # AI Chatbot configuration
     groq_api_key: str = ""

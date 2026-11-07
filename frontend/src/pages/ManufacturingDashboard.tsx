@@ -32,6 +32,7 @@ import { useAuth } from "../auth/useAuth";
 import { analyzeBusinessDataQuality } from "../data/analysis/businessDataQuality";
 import { parseDprWorkbookFile, type ParsedDprWorkbook } from "../data/parser/excelParser";
 import { saveDashboardDataset, type DashboardDatasetState } from "../data/state/dashboardDataStore";
+import { loadCachedLiveDataset, saveCachedLiveDataset } from "../data/state/liveDataCache";
 import { fetchManufacturingDataset, fetchManufacturingStatus, normalizeGoogleSheetRecords } from "../services/manufacturingApi";
 import type { ManufacturingApiResponse, ManufacturingConnectionStatus } from "../services/manufacturingApi";
 import { useManufacturingLivePolling } from "../hooks/useManufacturingLivePolling";
@@ -120,20 +121,9 @@ type PageRoute =
   | "production"
   | "oee"
   | "quality"
-  | "ppc"
-  | "scm"
-  | "store"
   | "maintenance"
-  | "npd"
-  | "hr"
-  | "safety"
-  | "logistics"
-  | "5s"
   | "kpi"
-  | "data-import"
-  | "google-forms"
-  | "actions"
-  | "settings";
+  | "data-import";
 
 type KpiPoint = {
   label: string;
@@ -195,75 +185,10 @@ function SidebarNavIcon({ itemKey }: { itemKey: string }) {
           <polyline points="9 12 11 14 15 10" />
         </svg>
       );
-    case "ppc":
-      return (
-        <svg {...common}>
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-          <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
-        </svg>
-      );
-    case "scm":
-      return (
-        <svg {...common}>
-          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-        </svg>
-      );
-    case "store":
-      return (
-        <svg {...common}>
-          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-          <path d="m3.3 7 8.7 5 8.7-5" />
-          <path d="M12 22V12" />
-        </svg>
-      );
     case "maintenance":
       return (
         <svg {...common}>
           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-        </svg>
-      );
-    case "npd":
-      return (
-        <svg {...common}>
-          <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
-          <path d="M9 18h6" />
-          <path d="M10 22h4" />
-        </svg>
-      );
-    case "hr":
-      return (
-        <svg {...common}>
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      );
-    case "safety":
-      return (
-        <svg {...common}>
-          <path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v2h16v-2a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4Z" />
-          <path d="M4 12v3a8 8 0 0 0 16 0v-3" />
-        </svg>
-      );
-    case "logistics":
-      return (
-        <svg {...common}>
-          <rect x="1" y="3" width="15" height="13" rx="1" />
-          <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
-          <circle cx="5.5" cy="18.5" r="2.5" />
-          <circle cx="18.5" cy="18.5" r="2.5" />
-        </svg>
-      );
-    case "5s":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="m9 12 2 2 4-4" />
         </svg>
       );
     case "kpi":
@@ -282,28 +207,6 @@ function SidebarNavIcon({ itemKey }: { itemKey: string }) {
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
       );
-    case "google-forms":
-      return (
-        <svg {...common}>
-          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-          <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-          <path d="M9 12h6M9 16h6" />
-        </svg>
-      );
-    case "actions":
-      return (
-        <svg {...common}>
-          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-          <line x1="4" y1="22" x2="4" y2="15" />
-        </svg>
-      );
-    case "settings":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      );
     default:
       return (
         <svg {...common}>
@@ -319,45 +222,10 @@ const navItems = [
   { key: "production", label: "Production", icon: "▣" },
   { key: "oee", label: "OEE & Equipment", icon: "⚡" },
   { key: "quality", label: "Quality", icon: "◌" },
-  { key: "ppc", label: "PPC", icon: "▤" },
-  { key: "scm", label: "SCM", icon: "↔" },
-  { key: "store", label: "Store", icon: "▦" },
   { key: "maintenance", label: "Maintenance", icon: "⚙" },
-  { key: "npd", label: "NPD / Design", icon: "✦" },
-  { key: "hr", label: "HR", icon: "◍" },
-  { key: "safety", label: "Safety", icon: "▲" },
-  { key: "logistics", label: "Logistics / Dispatch", icon: "⇄" },
-  { key: "5s", label: "5S", icon: "▭" },
   { key: "kpi", label: "KPI & Reports", icon: "▁" },
   { key: "data-import", label: "Data Import", icon: "⇪" },
-  { key: "google-forms", label: "Google Forms", icon: "▣" },
-  { key: "actions", label: "Pending Actions", icon: "⚑" },
-  { key: "settings", label: "Settings", icon: "⚙" },
 ] as const;
-
-const routeToTitle: Record<PageRoute, string> = {
-  dashboard: "Overall Manufacturing Dashboard",
-  "line-tracker": "ERC Mk-V Line Tracker",
-  worksheet: "ERC Mk-V Worksheet",
-  production: "Production Dashboard",
-  oee: "OEE Dashboard",
-  quality: "Quality Dashboard",
-  ppc: "PPC Dashboard",
-  scm: "SCM Dashboard",
-  store: "Store Dashboard",
-  maintenance: "Maintenance Dashboard",
-  npd: "NPD / Design Dashboard",
-  hr: "HR Dashboard",
-  safety: "Safety Dashboard",
-  logistics: "Dispatch Dashboard",
-  "5s": "5S Assessment",
-  kpi: "KPI & Reports",
-  "data-import": "Data Import Center",
-  "google-forms": "Department Data Collection",
-  actions: "Top 10 Pending Actions",
-  settings: "Dashboard Settings",
-};
-
 
 // defaultFilters now lives in the shared filter engine (Stage-aware).
 
@@ -493,21 +361,10 @@ function resolveHashRoute(): PageRoute {
     "#/production": "production",
     "#/oee": "oee",
     "#/quality": "quality",
-    "#/ppc": "ppc",
-    "#/scm": "scm",
-    "#/store": "store",
     "#/maintenance": "maintenance",
-    "#/npd": "npd",
-    "#/hr": "hr",
-    "#/safety": "safety",
-    "#/logistics": "logistics",
-    "#/5s": "5s",
     "#/kpi": "kpi",
     "#/data-import": "data-import",
     "#/data-quality": "data-import",
-    "#/google-forms": "google-forms",
-    "#/actions": "actions",
-    "#/settings": "settings",
   };
   return map[hash] ?? "dashboard";
 }
@@ -1095,20 +952,6 @@ function mapRouteToSlideId(route: PageRoute): string {
   }
 }
 
-const STUB_ROUTES: PageRoute[] = [
-  "ppc",
-  "scm",
-  "store",
-  "npd",
-  "hr",
-  "safety",
-  "logistics",
-  "5s",
-  "google-forms",
-  "actions",
-  "settings",
-];
-
 export function ManufacturingDashboard() {
   const { logout, isAuthenticated } = useAuth();
   const [activePage, setActivePage] = useState<PageRoute>(resolveHashRoute());
@@ -1137,6 +980,7 @@ export function ManufacturingDashboard() {
   // --- Live Google Sheets State (Google Sheets only) ---
   // Filters are loaded from and synced to sessionStorage to persist across view navigation
   const [liveDataset, setLiveDataset] = useState<LiveDatasetState | null>(null);
+  const [isBackgroundUpdating, setIsBackgroundUpdating] = useState<boolean>(false);
   /**
    * True while the live Google Sheets dataset is being fetched and is not yet
    * available. While true, the dashboard must NOT present the legacy mock/demo
@@ -1145,6 +989,36 @@ export function ManufacturingDashboard() {
    * instead of mock-derived date bounds.
    */
   const [liveLoading, setLiveLoading] = useState<boolean>(true);
+
+  // SWR: Pre-hydrate from client IndexedDB cache immediately for instant 0ms render
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cached = await loadCachedLiveDataset();
+        if (cancelled || !cached) return;
+        setLiveDataset((prev) => {
+          if (prev && prev.records.length > 0) return prev;
+          return {
+            records: cached.records,
+            spreadsheetId: cached.spreadsheetId,
+            worksheet: cached.worksheet,
+            recordCount: cached.recordCount,
+            lastUpdated: cached.lastUpdated,
+            connectionStatus: "connected",
+            error: null,
+          };
+        });
+        setLiveLoading(false);
+        setLiveLoadError(null);
+      } catch {
+        // ignore client cache retrieval errors
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   /**
    * Reason the initial live connection could not be established, set ONLY when
    * every bootstrap attempt has failed (after retries). While set (and not
@@ -1318,6 +1192,7 @@ export function ManufacturingDashboard() {
     if (!isAuthenticated || !spreadsheetId) return;
     const initial = options?.initial ?? false;
 
+    setIsBackgroundUpdating(true);
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     const retryDelays = [500, 1500, 3000];
     let data: ManufacturingApiResponse | null = null;
@@ -1337,9 +1212,24 @@ export function ManufacturingDashboard() {
       }
     }
 
+    setIsBackgroundUpdating(false);
+
     if (data && data.connectionStatus === "connected" && data.data.length > 0) {
       const records = normalizeGoogleSheetRecords(data.data);
       const resolvedWorksheet = data.worksheet || liveWorksheet || DEFAULT_GOOGLE_SHEET_WORKSHEET;
+
+      // Persist to client cache asynchronously
+      void saveCachedLiveDataset({
+        spreadsheetId,
+        worksheet: resolvedWorksheet,
+        recordCount: records.length,
+        lastUpdated: data.lastUpdated,
+        minDate: null,
+        maxDate: null,
+        records,
+        savedAt: Date.now(),
+      });
+
       // STRICT SEPARATION: Only update liveDataset, never uploadedDataset.
       setCurrentWorksheet(resolvedWorksheet);
       setLiveDataset({
@@ -1369,8 +1259,14 @@ export function ManufacturingDashboard() {
 
     // Final failure (after retries).
     if (initial) {
-      // No previous dataset to keep showing: surface the explicit error state.
-      setLiveLoadError(data?.error || lastError);
+      // If we already have cached records showing, retain them with error status rather than blanking the screen
+      setLiveDataset((prev) => {
+        if (prev && prev.records.length > 0) {
+          return { ...prev, connectionStatus: "error", error: data?.error || lastError };
+        }
+        setLiveLoadError(data?.error || lastError);
+        return null;
+      });
       setLiveLoading(false);
     } else {
       // Background refresh with an existing dataset: keep showing the data
@@ -2604,7 +2500,7 @@ export function ManufacturingDashboard() {
   };
 
   return (
-    <div className={`factory-layout ${sidebarCollapsed ? "factory-layout--sidebar-collapsed" : ""}`}>
+    <div className={`factory-layout ${sidebarCollapsed ? "factory-layout--sidebar-collapsed" : ""} ${mobileMenuOpen ? "factory-layout--mobile-open" : ""}`}>
       {/* Mobile Drawer Backdrop */}
       {mobileMenuOpen && (
         <div
@@ -2623,6 +2519,19 @@ export function ManufacturingDashboard() {
               <small>Manufacturing Dashboard</small>
             </div>
           )}
+          {/* Mobile drawer close button */}
+          <button
+            type="button"
+            className="sidebar__mobile-close-btn"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Close navigation menu"
+            title="Close menu"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
           <button
             type="button"
             className="sidebar__collapse-btn"
@@ -2757,7 +2666,12 @@ export function ManufacturingDashboard() {
 
           <div className="exec-header__right">
             {/* Compact Live Status Badge */}
-            {liveDataset?.connectionStatus === "connected" ? (
+            {isBackgroundUpdating ? (
+              <div className="exec-header__status-badge exec-header__status-badge--syncing" title="Fetching latest records in background">
+                <span className="exec-header__dot exec-header__dot--syncing" aria-hidden="true" />
+                <span>↻ UPDATING DATA…</span>
+              </div>
+            ) : liveDataset?.connectionStatus === "connected" ? (
               <div className="exec-header__status-badge exec-header__status-badge--live">
                 <span className="exec-header__dot exec-header__dot--live" aria-hidden="true" />
                 <span>● DATA CONNECTED</span>
@@ -2935,32 +2849,6 @@ export function ManufacturingDashboard() {
           )
         ) : activePage === "maintenance" ? (
           <MaintenanceDashboard />
-        ) : STUB_ROUTES.includes(activePage) ? (
-          <div className="module-stub-panel" role="status">
-            <div className="module-stub-card">
-              <span className="module-stub-badge">MODULE STATUS: PENDING ERP INTEGRATION</span>
-              <h2>{routeToTitle[activePage]}</h2>
-              <p>
-                This module is documented in <code>docs/NAVIGATION_STATUS.md</code> as pending department ERP / Google Form integration.
-              </p>
-              <p>
-                Live production, downtime, loss, quality, line, and work center analytics from the Medchal plant are active in the operations dashboard.
-              </p>
-              <div style={{ marginTop: "1.25rem" }}>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => {
-                    window.location.hash = "#/dashboard";
-                    setActivePage("dashboard");
-                    setLiveActiveSlideId("executive");
-                  }}
-                >
-                  Return to Live Operations Overview
-                </button>
-              </div>
-            </div>
-          </div>
         ) : (
           <>
             {/* ===================================================================

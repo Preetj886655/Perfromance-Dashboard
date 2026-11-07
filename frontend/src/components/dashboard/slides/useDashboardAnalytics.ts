@@ -128,25 +128,6 @@ function buildDailySeries(records: DprRecord[]) {
     .map(([date, data]) => ({ date, actual: data.actual, target: data.target }));
 }
 
-/** Aggregate records into GroupStat buckets for a given dimension. */
-function buildGroupStats(records: DprRecord[], keySelector: (row: DprRecord) => string | undefined): GroupStat[] {
-  const buckets = new Map<string, GroupStat>();
-  records.forEach((row) => {
-    const key = keySelector(row)?.trim();
-    if (!key) return;
-    const entry = buckets.get(key) ?? { key, production: 0, target: 0, downtime: 0, rejection: 0, productionLoss: 0, achievement: null };
-    entry.production += row.actualProductionQty ?? 0;
-    entry.target += rowTarget(row);
-    entry.downtime += rowDowntime(row);
-    entry.rejection += row.totalRejectionQty ?? 0;
-    entry.productionLoss += typeof row.productionLoss === "number" && Number.isFinite(row.productionLoss) ? row.productionLoss : 0;
-    buckets.set(key, entry);
-  });
-  return [...buckets.values()].map((entry) => ({
-    ...entry,
-    achievement: entry.target > 0 ? (entry.production / entry.target) * 100 : null,
-  }));
-}
 
 function buildDowntimeDailySeries(records: DprRecord[]) {
   const byDate = new Map<string, number>();
@@ -161,20 +142,6 @@ function buildDowntimeDailySeries(records: DprRecord[]) {
     .map(([date, minutes]) => ({ date, minutes }));
 }
 
-/** Downtime (minutes) aggregated by an arbitrary dimension. */
-function buildDowntimePoints(records: DprRecord[], keySelector: (row: DprRecord) => string | undefined): DowntimePoint[] {
-  const buckets = new Map<string, number>();
-  records.forEach((row) => {
-    const key = keySelector(row)?.trim();
-    if (!key) return;
-    const minutes = rowDowntime(row);
-    if (!Number.isFinite(minutes) || minutes <= 0) return;
-    buckets.set(key, (buckets.get(key) ?? 0) + minutes);
-  });
-    return [...buckets.entries()]
-    .map(([key, minutes]) => ({ key, minutes }))
-    .sort((a, b) => b.minutes - a.minutes);
-}
 
 /** Row-level production loss (Prod Loss NOS). */
 function rowProductionLoss(row: DprRecord): number {
@@ -182,23 +149,6 @@ function rowProductionLoss(row: DprRecord): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-/** Production loss (NOS) aggregated by an arbitrary dimension. */
-function buildProductionLossPoints(
-  records: DprRecord[],
-  keySelector: (row: DprRecord) => string | undefined
-): DowntimePoint[] {
-  const buckets = new Map<string, number>();
-  records.forEach((row) => {
-    const key = keySelector(row)?.trim();
-    if (!key) return;
-    const loss = rowProductionLoss(row);
-    if (!Number.isFinite(loss) || loss <= 0) return;
-    buckets.set(key, (buckets.get(key) ?? 0) + loss);
-  });
-  return [...buckets.entries()]
-    .map(([key, minutes]) => ({ key, minutes }))
-    .sort((a, b) => b.minutes - a.minutes);
-}
 
 /** Daily production-loss trend (NOS). */
 function buildLossDailySeries(records: DprRecord[]) {
@@ -262,29 +212,136 @@ export function useDashboardAnalytics(
     return buildLossDailySeries(records);
   }, [records, granularTrendSeries]);
 
-  const byLine = useMemo(() => buildGroupStats(records, (row) => row.lineName), [records]);
-  const byShift = useMemo(() => buildGroupStats(records, (row) => row.shift), [records]);
-  const byStage = useMemo(() => buildGroupStats(records, (row) => row.rawStage), [records]);
-  const byMaterial = useMemo(() => buildGroupStats(records, (row) => row.material), [records]);
-  const byWorkCenter = useMemo(() => buildGroupStats(records, (row) => row.workCenter), [records]);
-  const downtimeByWorkCenter = useMemo(() => buildDowntimePoints(records, (row) => row.workCenter), [records]);
-  const downtimeByStage = useMemo(() => buildDowntimePoints(records, (row) => row.rawStage), [records]);
-  const downtimeByLine = useMemo(() => buildDowntimePoints(records, (row) => row.lineName), [records]);
-  const downtimeByShift = useMemo(() => buildDowntimePoints(records, (row) => row.shift), [records]);
-  const lossByWorkCenter = useMemo(() => buildProductionLossPoints(records, (row) => row.workCenter), [records]);
-  const lossByStage = useMemo(() => buildProductionLossPoints(records, (row) => row.rawStage), [records]);
-  const lossByLine = useMemo(() => buildProductionLossPoints(records, (row) => row.lineName), [records]);
-  const lossByShift = useMemo(() => buildProductionLossPoints(records, (row) => row.shift), [records]);
-  const lossByMachine = useMemo(() => buildProductionLossPoints(records, (row) => row.machineName || row.machineNo), [records]);
-  const lossByMaterial = useMemo(() => buildProductionLossPoints(records, (row) => row.material), [records]);
-  const totalProductionLoss = useMemo(
-    () =>
-      records.reduce(
-        (sum, row) => (typeof row.productionLoss === "number" && Number.isFinite(row.productionLoss) ? sum + row.productionLoss : sum),
-        0
-      ),
-    [records]
-  );
+  // Single-pass unified aggregations over records to slash execution time
+  const unifiedBreakdowns = useMemo(() => {
+    const lineBuckets = new Map<string, GroupStat>();
+    const shiftBuckets = new Map<string, GroupStat>();
+    const stageBuckets = new Map<string, GroupStat>();
+    const materialBuckets = new Map<string, GroupStat>();
+    const wcBuckets = new Map<string, GroupStat>();
+
+    const dtWc = new Map<string, number>();
+    const dtStage = new Map<string, number>();
+    const dtLine = new Map<string, number>();
+    const dtShift = new Map<string, number>();
+
+    const lossWc = new Map<string, number>();
+    const lossStage = new Map<string, number>();
+    const lossLine = new Map<string, number>();
+    const lossShift = new Map<string, number>();
+    const lossMachine = new Map<string, number>();
+    const lossMaterial = new Map<string, number>();
+
+    let totalLoss = 0;
+    let minDate = "";
+    let maxDate = "";
+
+    const addGroup = (buckets: Map<string, GroupStat>, rawKey: string | undefined, prod: number, tgt: number, dt: number, rej: number, loss: number) => {
+      const key = rawKey?.trim();
+      if (!key) return;
+      let entry = buckets.get(key);
+      if (!entry) {
+        entry = { key, production: 0, target: 0, downtime: 0, rejection: 0, productionLoss: 0, achievement: null };
+        buckets.set(key, entry);
+      }
+      entry.production += prod;
+      entry.target += tgt;
+      entry.downtime += dt;
+      entry.rejection += rej;
+      entry.productionLoss += loss;
+    };
+
+    const addPoint = (buckets: Map<string, number>, rawKey: string | undefined, val: number) => {
+      const key = rawKey?.trim();
+      if (!key || !Number.isFinite(val) || val <= 0) return;
+      buckets.set(key, (buckets.get(key) ?? 0) + val);
+    };
+
+    for (let i = 0; i < records.length; i++) {
+      const row = records[i];
+      const prod = row.actualProductionQty ?? 0;
+      const tgt = rowTarget(row);
+      const dt = rowDowntime(row);
+      const rej = row.totalRejectionQty ?? 0;
+      const loss = typeof row.productionLoss === "number" && Number.isFinite(row.productionLoss) ? row.productionLoss : 0;
+
+      if (loss > 0) totalLoss += loss;
+
+      if (row.date) {
+        if (!minDate || row.date < minDate) minDate = row.date;
+        if (!maxDate || row.date > maxDate) maxDate = row.date;
+      }
+
+      addGroup(lineBuckets, row.lineName, prod, tgt, dt, rej, loss);
+      addGroup(shiftBuckets, row.shift, prod, tgt, dt, rej, loss);
+      addGroup(stageBuckets, row.rawStage, prod, tgt, dt, rej, loss);
+      addGroup(materialBuckets, row.material, prod, tgt, dt, rej, loss);
+      addGroup(wcBuckets, row.workCenter, prod, tgt, dt, rej, loss);
+
+      addPoint(dtWc, row.workCenter, dt);
+      addPoint(dtStage, row.rawStage, dt);
+      addPoint(dtLine, row.lineName, dt);
+      addPoint(dtShift, row.shift, dt);
+
+      addPoint(lossWc, row.workCenter, loss);
+      addPoint(lossStage, row.rawStage, loss);
+      addPoint(lossLine, row.lineName, loss);
+      addPoint(lossShift, row.shift, loss);
+      addPoint(lossMachine, row.machineName || row.machineNo, loss);
+      addPoint(lossMaterial, row.material, loss);
+    }
+
+    const finalizeGroup = (buckets: Map<string, GroupStat>): GroupStat[] =>
+      [...buckets.values()].map((e) => ({
+        ...e,
+        achievement: e.target > 0 ? (e.production / e.target) * 100 : null,
+      }));
+
+    const finalizePoints = (buckets: Map<string, number>): DowntimePoint[] =>
+      [...buckets.entries()]
+        .map(([key, minutes]) => ({ key, minutes }))
+        .sort((a, b) => b.minutes - a.minutes);
+
+    return {
+      byLine: finalizeGroup(lineBuckets),
+      byShift: finalizeGroup(shiftBuckets),
+      byStage: finalizeGroup(stageBuckets),
+      byMaterial: finalizeGroup(materialBuckets),
+      byWorkCenter: finalizeGroup(wcBuckets),
+      downtimeByWorkCenter: finalizePoints(dtWc),
+      downtimeByStage: finalizePoints(dtStage),
+      downtimeByLine: finalizePoints(dtLine),
+      downtimeByShift: finalizePoints(dtShift),
+      lossByWorkCenter: finalizePoints(lossWc),
+      lossByStage: finalizePoints(lossStage),
+      lossByLine: finalizePoints(lossLine),
+      lossByShift: finalizePoints(lossShift),
+      lossByMachine: finalizePoints(lossMachine),
+      lossByMaterial: finalizePoints(lossMaterial),
+      totalProductionLoss: totalLoss,
+      dateRange: { start: minDate, end: maxDate },
+    };
+  }, [records]);
+
+  const {
+    byLine,
+    byShift,
+    byStage,
+    byMaterial,
+    byWorkCenter,
+    downtimeByWorkCenter,
+    downtimeByStage,
+    downtimeByLine,
+    downtimeByShift,
+    lossByWorkCenter,
+    lossByStage,
+    lossByLine,
+    lossByShift,
+    lossByMachine,
+    lossByMaterial,
+    totalProductionLoss,
+    dateRange,
+  } = unifiedBreakdowns;
 
   const periodComparison = useMemo(
     () => comparePeriods(records, previousRecords),
@@ -295,17 +352,6 @@ export function useDashboardAnalytics(
     () => calculateHierarchyAnalysis(records),
     [records]
   );
-
-  const dateRange = useMemo(() => {
-    let start = "";
-    let end = "";
-    for (const row of records) {
-      if (!row.date) continue;
-      if (!start || row.date < start) start = row.date;
-      if (!end || row.date > end) end = row.date;
-    }
-    return { start, end };
-  }, [records]);
 
   // Target vs Actual period series — one per aggregation grain, all from the
   // same filtered record set so the four charts stay perfectly consistent.

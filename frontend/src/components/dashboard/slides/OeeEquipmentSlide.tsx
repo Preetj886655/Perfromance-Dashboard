@@ -381,7 +381,7 @@ export function OeeEquipmentSlide({ onNavigateSlide }: Props) {
 
       {/* Primary KPI Scorecards */}
       {overall ? (
-        <motion.div className="oee-kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }} variants={cardVariants}>
+        <motion.div className="oee-kpi-grid" variants={cardVariants}>
           {/* OEE Main Card */}
           <div className="kpi-card" style={{ borderLeft: "4px solid #f59e0b", background: "linear-gradient(135deg, #ffffff 0%, #fffbeb 100%)" }}>
             <div className="kpi-card__header">
@@ -481,7 +481,7 @@ export function OeeEquipmentSlide({ onNavigateSlide }: Props) {
       )}
 
       {/* Charts Grid (2 Up) */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))", gap: "1.25rem", marginBottom: "1.5rem" }}>
+      <div className="oee-charts-grid">
         {/* Chart 1: Work Center OEE Comparison */}
         <div className="panel panel--chart" style={{ background: "#ffffff", padding: "1.25rem", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -530,7 +530,7 @@ export function OeeEquipmentSlide({ onNavigateSlide }: Props) {
               </h3>
             </div>
           </div>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-responsive-wrapper" style={{ overflowX: "auto", width: "100%", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
             <table className="lt-data-table" style={{ width: "100%", fontSize: "0.85rem", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc", textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>

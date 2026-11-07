@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "backend": "backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --app-dir backend --port 8000 --reload",
+    "frontend": "npm --prefix frontend run dev"
+  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.263"
   }

@@ -177,6 +177,52 @@ def test_downtime_parser_excludes_mirrored_range_and_invalid_dates() -> None:
     }
 
 
+def test_downtime_parser_accepts_live_header_variants() -> None:
+    source = _grid_source(
+        "downtime-log",
+        "Downtime Log",
+        1490231673,
+        {
+            2: [
+                "1899-12-31",
+                "2026-09-18",
+                "ERC",
+                "A",
+                "MK5",
+                "Clip",
+                "Line 1",
+                "Breakdown",
+                60,
+                1,
+                100,
+                80,
+            ],
+        },
+    )
+    source["headers"] = [
+        "Row",
+        "SL No",
+        "Date",
+        "Line",
+        "Shift",
+        "Part",
+        "Stage",
+        "Machine",
+        "Downtime Type",
+        "Downtime\n Mints",
+        "Prod Loss\n NOS",
+        "Prod Target\n NOS",
+        "Total PROD\n NOS",
+    ]
+
+    records, quality = dashboard_service._downtime_records(source)
+
+    assert records[0]["date"] == "2026-09-18"
+    assert records[0]["downtime_min"] == 60
+    assert records[0]["category"] is None
+    assert quality["invalid_dates"] == 0
+
+
 def test_google_sheet_serial_dates_parse_as_calendar_dates() -> None:
     assert dashboard_service._date_value(46283).isoformat() == "2026-09-18"
 
